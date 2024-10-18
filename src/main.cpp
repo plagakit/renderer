@@ -38,7 +38,8 @@ int main()
 	while (!WindowShouldClose())
 		UpdateDrawFrame();
 #endif
-
+	
+	renderer.Shutdown();
 	rlImGuiShutdown();
 	CloseWindow();
 	return 0;

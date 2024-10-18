@@ -1,17 +1,22 @@
 #include "renderer.h"
 
+#include <iostream>
+#include <algorithm>
+#include <vector>	
 #include <limits>
 #include <fstream>
 #include <strstream>
 
 void Renderer::Init()
 {
+	threadPool.Start();
+
 	for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
 		depthBuffer.push_back(std::numeric_limits<float>::max());
 
 	ConstructProjectionMatrix();
 	
-	if (!LoadFromObjFile("res/suzanne.obj", object))
+	if (!LoadFromObjFile("res/teapot.obj", object))
 	{
 		printf("Suzanne couldn't load!\n");
 		exit(1);
@@ -31,6 +36,37 @@ void Renderer::Render()
 {
 	DrawLine(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, RED);
 	ResetDepthBuffer();
+
+	//std::cout << object.tris.size() << std::endl;
+	//
+	//std::vector<Tri> tris = object.tris;
+	//std::vector<Tri> vn;
+	//std::vector<RVector3> fn;
+	//std::fill_n(vn.begin(), object.tris.size(), tris[0]);
+	//std::fill_n(fn.begin(), object.tris.size(), RVector3::Zero);
+
+	//for (int i = 0; i < object.tris.size(); i++)
+	//{
+	//	threadPool.QueueJob([this, i, &tris, &vn, &fn] {
+	//		std::cout << i << std::endl;
+	//		Tri tri = object.tris[i];
+
+	//		ModelSpaceToWorldSpace(tri);
+
+	//		// Cull if not facing camera (backface)
+	//		RVector3 cameraFacing = RVector3(0, 0, 1);
+	//		RVector3 normal = TriangleFaceNormal(tri);
+	//		vn[i] = object.vertexNormals[i];
+	//		fn[i] = normal;
+	//		if (normal.DotProduct(cameraFacing) < 0)
+	//			return;
+
+	//		WorldSpaceToScreenSpace(tri);
+	//		tris[i] = tri;
+
+	//		//RasterizeTriangle(tri, object.vertexNormals[i], normal, GREEN);
+	//	});
+	//}
 
 	for (int i = 0; i < object.tris.size(); i++)
 	{
@@ -67,7 +103,7 @@ void Renderer::Render()
 
 void Renderer::Shutdown()
 {
-
+	threadPool.Stop();
 }
 
 // HELPER METHODS

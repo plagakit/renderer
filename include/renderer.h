@@ -1,17 +1,9 @@
 #pragma once
 
 #include "raylib-cpp.hpp"
-#include <vector>
+#include "thread_pool.h"
+#include "mesh.h"
 
-
-struct Tri {
-	RVector3 p[3];
-};
-
-struct TriMesh {
-	std::vector<Tri> tris;
-	std::vector<Tri> vertexNormals;
-};
 
 class Renderer {
 
@@ -25,6 +17,8 @@ private:
 	const int SCREEN_WIDTH = 1280;
 	const int SCREEN_HEIGHT = 720;
 
+	ThreadPool threadPool;
+
 	std::vector<float> depthBuffer;
 	float minDepth; // for depth map
 
@@ -33,7 +27,7 @@ private:
 		GOURAUD,
 		DEPTH_MAP
 	};
-	LightingType lightingType = LightingType::GOURAUDk;
+	LightingType lightingType = LightingType::FLAT;
 	bool useDepthBuffer = true;
 
 	RVector3 cameraPos;
