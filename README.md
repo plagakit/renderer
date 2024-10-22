@@ -1,7 +1,7 @@
 # renderer
 
 ## Building
-First, clone the repo and make a build folder:
+Make sure you have [CMake](https://cmake.org/). First, clone the repo and make a build folder:
 ```
 git clone https://github.com/plagakit/renderer.git
 cd renderer
@@ -13,7 +13,7 @@ For desktop, run:
 cmake ..
 cmake --build build
 ```
-For web:
+For web (make sure you have [Emscripten](https://emscripten.org/docs/getting_started/Tutorial.html) and the [Ninja build system](https://ninja-build.org/)):
 ```
 cmake -S .. -B web -G Ninja -DPLATFORM=Web "-DCMAKE_TOOLCHAIN_FILE=<YOUR EMSCRIPTEN PATH>/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake"
 cmake --build web
