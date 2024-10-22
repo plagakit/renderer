@@ -55,7 +55,7 @@ target_link_libraries(imgui_raylib imgui raylib)
 # MAIN FILES
 add_executable(${PROJECT_NAME})
 add_subdirectory("src")
-target_include_directories(${PROJECT_NAME} PRIVATE "include")
+#target_include_directories(${PROJECT_NAME} PRIVATE "include")
 target_link_libraries(${PROJECT_NAME} raylib raylib_cpp raygui imgui imgui_raylib)
 
 # Copy resources into build

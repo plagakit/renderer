@@ -6,11 +6,11 @@
 #include <emscripten/emscripten.h>
 #endif
 
-#include "renderer.h"
+#include "scene.h"
 
-int screenWidth = 1280;
-int screenHeight = 720;
-Renderer renderer;
+const int SCREEN_WIDTH = 1280;
+const int SCREEN_HEIGHT = 720;
+Scene scene;
 
 void UpdateDrawFrame(void);
 
@@ -23,11 +23,11 @@ int main()
 
 	// Create window
 	SetConfigFlags(FLAG_VSYNC_HINT);
-	InitWindow(screenWidth, screenHeight, "Engine");
+	InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Renderer");
 	SetTargetFPS(60);
 	rlImGuiSetup(true);
 
-	renderer.Init();
+	scene.Init();
 
 	// Web main loop
 #ifdef PLATFORM_WEB
@@ -38,8 +38,7 @@ int main()
 	while (!WindowShouldClose())
 		UpdateDrawFrame();
 #endif
-	
-	renderer.Shutdown();
+
 	rlImGuiShutdown();
 	CloseWindow();
 	return 0;
@@ -48,11 +47,9 @@ int main()
 
 void UpdateDrawFrame(void)
 {
-	renderer.Update(GetFrameTime());
+	scene.Update(GetFrameTime());
 
 	BeginDrawing();
-	ClearBackground(BLACK);
-	DrawFPS(0, 0);
-	renderer.Render();
+	scene.Render();
 	EndDrawing();
 }
