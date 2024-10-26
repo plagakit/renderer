@@ -24,7 +24,7 @@ int main()
 	// Create window
 	SetConfigFlags(FLAG_VSYNC_HINT);
 	InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Renderer");
-	SetTargetFPS(60);
+	SetTargetFPS(GetMonitorRefreshRate(GetCurrentMonitor()));
 	rlImGuiSetup(true);
 
 	scene.Init();

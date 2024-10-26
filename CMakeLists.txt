@@ -55,7 +55,6 @@ target_link_libraries(imgui_raylib imgui raylib)
 # MAIN FILES
 add_executable(${PROJECT_NAME})
 add_subdirectory("src")
-#target_include_directories(${PROJECT_NAME} PRIVATE "include")
 target_link_libraries(${PROJECT_NAME} raylib raylib_cpp raygui imgui imgui_raylib)
 
 # Copy resources into build
@@ -68,8 +67,8 @@ if (${PLATFORM} STREQUAL "Web" OR WEB_PRESET)
     set_target_properties(${PROJECT_NAME} PROPERTIES SUFFIX ".html")
 
 	# Required linker flags for using Raylib with Emscripten
-	target_link_options(${PROJECT_NAME} PRIVATE -sEXPORTED_FUNCTIONS=['_main','_malloc'] -sEXPORTED_RUNTIME_METHODS=ccall -sUSE_GLFW=3 --preload-file ${RESOURCES_DIR})
-	#target_compile_options(${PROJECT_NAME} PRIVATE -Os)
+    target_link_options(${PROJECT_NAME} PRIVATE -sEXPORTED_FUNCTIONS=['_main','_malloc'] -sEXPORTED_RUNTIME_METHODS=ccall -sUSE_GLFW=3 -sALLOW_MEMORY_GROWTH --preload-file ${RESOURCES_DIR})
+
 endif()
 
 # Raylib MacOS dependencies

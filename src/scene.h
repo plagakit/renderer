@@ -1,6 +1,8 @@
 #pragma once
 
+#include "my_transform.h"
 #include "renderer.h"
+#include "camera.h"
 #include "imgui.h"
 
 class Scene {
@@ -13,16 +15,21 @@ public:
 
 
 private:
+	const static int SCREEN_WIDTH = 1280;
+	const static int SCREEN_HEIGHT = 720;
+
 	Renderer renderer;
 
-	RVector3 objectPos = RVector3::Zero();
-	RQuaternion objectRot = RQuaternion::Identity();
-	RVector3 objectScale = RVector3(1.0f, 1.0f, 1.0f);
-	RVector3 objectAngVel = RVector3(-1, -0.5, 0.2);//RVector3::Zero();//RQuaternion::FromAxisAngle(RVector3(1, 0, 1), 0.1f);
+	MyTransform object;
+	RVector3 angularVelocity = RVector3(0.0f, -1.0f, -1.0f);
 
+	MyCamera camera;
+
+	int currentMeshIndex = 0;
 	TriMesh* currentMesh;
 	RMatrix currentTransform = RMatrix::Identity();
 
+	TriMesh cube;
 	TriMesh suzanne;
 	TriMesh teapot;
 

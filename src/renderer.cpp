@@ -4,14 +4,8 @@
 
 void Renderer::Init()
 {
-	framebufferImage = GenImageColor(SCREEN_WIDTH, SCREEN_HEIGHT, BLUE);
-	framebufferTexture = LoadTextureFromImage(framebufferImage);
-
-	for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
-	{
-		framebuffer.push_back(BLACK);
-		depthBuffer.push_back(std::numeric_limits<float>::max());
-	}
+	screenTexture = LoadTextureFromImage(GenImageColor(SCREEN_WIDTH, SCREEN_HEIGHT, BLUE));
+	InitFramebuffer();
 
 	ConstructProjectionMatrix();
 }
@@ -26,6 +20,11 @@ void Renderer::SetClearColor(Color color)
 	clearColor = color;
 }
 
+void Renderer::SetViewMatrix(const RMatrix& view)
+{
+	viewMatrix = view;
+}
+
 void Renderer::DrawMesh(TriMesh* mesh, RMatrix transform)
 {
 	commandQueue.push_back({ mesh, transform });
@@ -33,35 +32,42 @@ void Renderer::DrawMesh(TriMesh* mesh, RMatrix transform)
 
 void Renderer::FlushCommands()
 {
-	ResetDepthBuffer();
-	ClearScreen();
+	ClearFramebuffer();
+	config.rasterizedTriangles = 0;
 
-	DrawLine(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, RED);
+	RMatrix screenMatrix = RMatrix(
+		SCREEN_WIDTH * 0.5f, 0, 0, SCREEN_WIDTH * 0.5f,
+		0, SCREEN_HEIGHT * 0.5f, 0, SCREEN_HEIGHT * 0.5f,
+		0, 0, 1, 0,
+		0, 0, 0, 1
+	);
+
+	viewMatrix = camera.GetProjectionMatrix();//screenMatrix * projectionMatrix;
 	
 	for (const auto& command : commandQueue)
 	{
 		if (!command.mesh)
 			continue;
 
+		VertexAttributes a;
+
+		VertexUniforms uniforms = {
+			command.transform,
+			command.transform
+		};
+
 		for (int i = 0; i < command.mesh->tris.size(); i++)
 		{
 			Tri tri = command.mesh->tris[i];
 			Tri vn = command.mesh->vertexNormals[i];
 
-			//// Model Space -> Object Space
-			//for (auto& p : tri.p)
-			//{
-			//	// Scale
-			//	p *= 0.25f;
-			//
-			//	// Translate
-			//	p += RVector3(0, 0, 10.0f);
-			//}
-
 			// Object Space -> World Space
-			tri.p[0] = tri.p[0].Transform(command.transform);
+			for (auto& p : tri.p)
+				vertexShader(p, a, uniforms);
+
+			/*tri.p[0] = tri.p[0].Transform(command.transform);
 			tri.p[1] = tri.p[1].Transform(command.transform);
-			tri.p[2] = tri.p[2].Transform(command.transform);
+			tri.p[2] = tri.p[2].Transform(command.transform);*/
 			for (auto& p : vn.p) 
 				p = p.Transform(command.transform).Normalize();
 
@@ -79,34 +85,37 @@ void Renderer::FlushCommands()
 			for (auto& p : tri.p)
 			{
 				// Project onto viewport
-				p = p.Transform(projectionMatrix);
+				p = p.Transform(viewMatrix);
 
 				// Transform it into the middle of the screen
 				// (equivalent to moving an imaginary camera)
 				p += RVector3(1.0f, 1.0f, 0);
 				p.x *= 0.5f * SCREEN_WIDTH;
-				p.y *= 0.5 * SCREEN_HEIGHT;
+				p.y *= 0.5f * SCREEN_HEIGHT;
 			}
 
-			switch (config.lightingType)
+			config.rasterizedTriangles++;
+
+			if (config.polygonMode == PolygonMode::POINT)
 			{
-			case LightingType::FLAT:
-			case LightingType::GOURAUD:
-			case LightingType::DEPTH_MAP:
-				RasterizeTriangle(tri, vn, normal, GREEN);
-				break;
-
-			case LightingType::WIREFRAME:
-				DrawTriangle(tri, RAYWHITE);
-				break;
+				for (const auto& p : tri.p)
+				{
+					int idx = (int)p.y * SCREEN_WIDTH + (int)p.x;
+					if (idx >= 0 && idx < SCREEN_MAX)
+						fb.colorBuffer[idx] = RAYWHITE;
+				}
 			}
+			else if (config.polygonMode == PolygonMode::WIREFRAME)
+				DrawTriangle(tri, RAYWHITE);
+			else if (config.polygonMode == PolygonMode::FILLED || config.polygonMode == PolygonMode::DEPTH_MAP)
+				RasterizeTriangle(tri, vn, normal, GREEN);
 		}
 	}
 
-	if (config.lightingType == LightingType::DEPTH_MAP)
+	if (config.polygonMode == PolygonMode::DEPTH_MAP)
 	{
 		for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
-			framebuffer[i] = DarkenColor(WHITE, minDepth - depthBuffer[i] + 1); //depthBuffer[i] / minDepth);
+			fb.colorBuffer[i] = DarkenColor(WHITE, minDepth - fb.depthBuffer[i] + 1); //depthBuffer[i] / minDepth);
 	}
 
 	commandQueue.clear();
@@ -114,34 +123,39 @@ void Renderer::FlushCommands()
 
 void Renderer::BlitToScreen()
 {
-	UpdateTexture(framebufferTexture, framebuffer.data());
-	DrawTexture(framebufferTexture, 0, 0, WHITE);
+	UpdateTexture(screenTexture, fb.colorBuffer.data());
+	DrawTexture(screenTexture, 0, 0, WHITE);
+}
+
+void Renderer::InitFramebuffer()
+{
+	for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
+	{
+		fb.colorBuffer.push_back(BLACK);
+		fb.depthBuffer.push_back(std::numeric_limits<float>::max());
+	}
+}
+
+void Renderer::ClearFramebuffer()
+{
+	std::fill(fb.colorBuffer.begin(), fb.colorBuffer.end(), clearColor);
+	std::fill(fb.depthBuffer.begin(), fb.depthBuffer.end(), std::numeric_limits<float>::max());
 }
 
 // HELPER FUNCTIONS
 
 void Renderer::ConstructProjectionMatrix()
 {
-	float right = near * tanf(fov * 0.5f * DEG2RAD);
-	float top = right * aspectRatio;
+	//float right = near * tanf(fov * 0.5f * DEG2RAD);
+	//float top = right * aspectRatio;
 
-	projectionMatrix.m0 = near / right;
-	projectionMatrix.m5 = near / top;
-	projectionMatrix.m10 = -(far + near) / (far - near);
-	projectionMatrix.m11 = -1.0f;
-	projectionMatrix.m14 = -(2.0f * far * near) / (far - near);
-	projectionMatrix.m15 = 0.0f;
-}
-
-void Renderer::ClearScreen()
-{
-	std::fill(framebuffer.begin(), framebuffer.end(), clearColor);
-}
-
-void Renderer::ResetDepthBuffer()
-{
-	for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
-		depthBuffer[i] = std::numeric_limits<float>::max();
+	//projectionMatrix.m0 = near / right;
+	//projectionMatrix.m5 = near / top;
+	//projectionMatrix.m10 = -(far + near) / (far - near);
+	//projectionMatrix.m11 = -1.0f;
+	//projectionMatrix.m14 = -(2.0f * far * near) / (far - near);
+	//projectionMatrix.m15 = 0.0f;
+	//projectionMatrix = RMatrix::Perspective(fov, aspectRatio, near, far);
 }
 
 Color Renderer::DarkenColor(Color col, float factor) const
@@ -177,60 +191,30 @@ bool Renderer::IsPointInsideTriangle2D(const Tri& tri, const RVector3& point) co
 	return edge01 >= 0 && edge12 >= 0 && edge20 >= 0;
 }
 
-void Renderer::BresenhamMajorAxis(Color* curPixel, int dx, int dy, int stepMajor, int stepMinor, Color color)
-{
-	const int dx2 = dx * 2;
-	const int dy2 = dy * 2;
-	const int dydx2 = dy2 - dx2;
-	int d = dy2 - dx;
-
-	*curPixel = color;
-	while (dx--)
-	{
-		if (d > 0)
-		{
-			curPixel += stepMajor + stepMinor;
-			d += dydx2;
-		}
-		else
-		{
-			curPixel += stepMajor;
-			d += dy2;
-		}
-		*curPixel = color;
-	}
-}
-
-void Renderer::BresenhamStraight(Color* curPixel, int dx, int step, Color color)
-{
-	*curPixel = color;
-	while (dx--)
-	{
-		curPixel += step;
-		*curPixel = color;
-	}
-}
-
 void Renderer::DrawLineBresenham(int x0, int y0, int x1, int y1, Color color)
-{
-	// not actually bresenham
-	// TODO: do bresenham
-	
-	if (x0 > x1)
-	{
-		std::swap(x0, x1);
-		std::swap(y0, y1);
-	}
+{	
+	int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+	int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+	int err = dx + dy, e2;
 
-	float m = (y1 - y0) / (float)(x1 - x0);
-	float c = (x1 * y0 - x0 * y1) / (float)(x1 - x0);
-
-	for (int x = x0; x <= x1; x++)
+	while (true) 
 	{
-		int y = m * x + c;
-		framebuffer[y * SCREEN_WIDTH + x] = color;
+		int idx = y0 * SCREEN_WIDTH + x0;
+		if (idx >= 0 && idx < SCREEN_MAX)
+			fb.colorBuffer[y0 * SCREEN_WIDTH + x0] = color;
+
+		if (x0 == x1 && y0 == y1) 
+			return;
+		e2 = 2 * err;
+		if (e2 >= dy) { err += dy; x0 += sx; } /* e_xy+e_x > 0 */
+		if (e2 <= dx) { err += dx; y0 += sy; } /* e_xy+e_y < 0 */
 	}
 }
+
+//void Renderer::DrawPixel(int x, int y, Color color)
+//{
+//	fb.colorBuffer[y * SCREEN_WIDTH + x] = color;
+//}
 
 void Renderer::DrawTriangle(const Tri& tri, Color color)
 {
@@ -246,12 +230,12 @@ void Renderer::RasterizeTriangle(const Tri& tri, const Tri& vertexNormals, const
 	if (area <= 0)
 		return;
 
-	if (config.lightingType == LightingType::FLAT)
-	{
+	//if (config.lightingType == LightingType::FLAT)
+	//{
 		// Map (-1, 1) to (1, 0), from dot prod. to shading factor
-		float fac = (-normal.DotProduct(lightDirection) + 1) * 0.5f;
-		color = DarkenColor(color, fac);
-	}
+	float fac = (-normal.DotProduct(lightDirection) + 1) * 0.5f;
+	color = DarkenColor(color, fac);
+	//}
 
 	// Only check the pixels in the triangle's bounding box
 	int minX = std::max(0, static_cast<int>(std::floorf(std::min({ tri.p[0].x, tri.p[1].x, tri.p[2].x }))));
@@ -264,7 +248,7 @@ void Renderer::RasterizeTriangle(const Tri& tri, const Tri& vertexNormals, const
 	{
 		for (int y = minY; y < maxY; y++)
 		{
-			int idx = y * SCREEN_WIDTH + x;//x * SCREEN_HEIGHT + y;
+			int idx = y * SCREEN_WIDTH + x;
 			RVector3 point = RVector3(x, y, 0);
 
 			if (config.useDepthBuffer)
@@ -287,33 +271,30 @@ void Renderer::RasterizeTriangle(const Tri& tri, const Tri& vertexNormals, const
 					float z = tri.p[0].z * edge12
 						+ tri.p[1].z * edge20
 						+ tri.p[2].z * edge01;
-					if (z < depthBuffer[idx])
+					if (z < fb.depthBuffer[idx])
 					{
-						depthBuffer[idx] = z;
+						fb.depthBuffer[idx] = z;
 
-						if (config.lightingType == LightingType::GOURAUD)
-						{
-							float alpha = edge12;
-							float beta = edge20;
-							float gamma = 1 - alpha - beta;
+						//if (config.lightingType == LightingType::GOURAUD)
+						//{
+						//	float alpha = edge12;
+						//	float beta = edge20;
+						//	float gamma = 1 - alpha - beta;
 
-							RVector3 interpNormal = RVector3(
-								vertexNormals.p[0] * alpha
-								+ vertexNormals.p[1] * beta
-								+ vertexNormals.p[2] * gamma
-							).Normalize();
+						//	RVector3 interpNormal = RVector3(
+						//		vertexNormals.p[0] * alpha
+						//		+ vertexNormals.p[1] * beta
+						//		+ vertexNormals.p[2] * gamma
+						//	).Normalize();
 
-							//interpNormal = interpNormal.RotateByQuaternion();
-							//interpNormal = interpNormal.Transform(objRotZ).Transform(objRotX);
-							float dot = (-interpNormal.DotProduct(lightDirection) + 1) * 0.5f;
-							framebuffer[idx] = DarkenColor(color, dot);
-						}
-						else if (config.lightingType == LightingType::FLAT)
-						{
-							//DrawPixel(x, y, color);
-							framebuffer[idx] = color;
-						}
-
+						//	//interpNormal = interpNormal.RotateByQuaternion();
+						//	//interpNormal = interpNormal.Transform(objRotZ).Transform(objRotX);
+						//	float dot = (-interpNormal.DotProduct(lightDirection) + 1) * 0.5f;
+						//	fb.colorBuffer[idx] = DarkenColor(color, dot);
+						//}
+						//else if (config.lightingType == LightingType::FLAT)
+							fb.colorBuffer[idx] = color;
+						
 						if (z < minDepth)
 							minDepth = z;
 					}
@@ -322,8 +303,7 @@ void Renderer::RasterizeTriangle(const Tri& tri, const Tri& vertexNormals, const
 			else
 			{
 				if (IsPointInsideTriangle2D(tri, point))
-					framebuffer[idx] = color;
-					//DrawPixel(x, y, color);
+					fb.colorBuffer[idx] = color;
 			}
 		}
 	}

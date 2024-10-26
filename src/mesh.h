@@ -8,6 +8,7 @@ struct Tri {
 };
 
 struct TriMesh {
+	int vertCount = 0;
 	std::vector<Tri> tris;
 	std::vector<Tri> vertexNormals;
 

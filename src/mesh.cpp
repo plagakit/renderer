@@ -28,6 +28,7 @@ bool TriMesh::LoadFromOBJ(const std::string& path, TriMesh& outMesh, const RMatr
 		{
 			RVector3 v;
 			s >> junk >> v.x >> v.y >> v.z;
+			mesh.vertCount++;
 			vertices.push_back(v);
 		}
 
