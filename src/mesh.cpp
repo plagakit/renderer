@@ -3,15 +3,15 @@
 #include <fstream>
 #include <strstream>
 
-bool TriMesh::LoadFromOBJ(const std::string& path, TriMesh& outMesh, const RMatrix& model)
+bool TriMesh::LoadFromOBJ(const std::string& path, TriMesh& outMesh, const Mat4& model)
 {
 	std::ifstream f(path);
 	if (!f.is_open())
 		return false;
 
 	TriMesh mesh;
-	std::vector<RVector3> vertices;
-	std::vector<RVector3> vNormals;
+	std::vector<Vec3> vertices;
+	std::vector<Vec3> vNormals;
 
 	while (!f.eof())
 	{
@@ -26,7 +26,7 @@ bool TriMesh::LoadFromOBJ(const std::string& path, TriMesh& outMesh, const RMatr
 		// Vertex
 		if (line[0] == 'v' && line[1] == ' ')
 		{
-			RVector3 v;
+			Vec3 v;
 			s >> junk >> v.x >> v.y >> v.z;
 			mesh.vertCount++;
 			vertices.push_back(v);
@@ -35,7 +35,7 @@ bool TriMesh::LoadFromOBJ(const std::string& path, TriMesh& outMesh, const RMatr
 		// Vertex normal
 		else if (line[0] == 'v' && line[1] == 'n')
 		{
-			RVector3 v;
+			Vec3 v;
 			s >> junk >> junk >> v.x >> v.y >> v.z;
 			vNormals.push_back(v);
 		}
@@ -63,8 +63,8 @@ bool TriMesh::LoadFromOBJ(const std::string& path, TriMesh& outMesh, const RMatr
 			Tri tri = { vertices[f[0] - 1], vertices[f[1] - 1], vertices[f[2] - 1] };
 			Tri normals = { vNormals[n[0] - 1], vNormals[n[1] - 1], vNormals[n[2] - 1] };
 
-			for (auto& p : tri.p)		p = p.Transform(model);
-			for (auto& p : normals.p)	p = p.Transform(model);
+			for (auto& p : tri.p)		p = Vec3(model * Vec4(p.x, p.y, p.z, 1.0f));//p = p.Transform(model);
+			for (auto& p : normals.p)	p = Vec3(model * Vec4(p.x, p.y, p.z, 1.0f));//p = p.Transform(model);
 
 			mesh.tris.push_back(tri);
 			mesh.vertexNormals.push_back(normals);

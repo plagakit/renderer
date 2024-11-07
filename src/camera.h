@@ -1,9 +1,8 @@
 #pragma once
 
-#include "my_transform.h"
-#include <raylib-cpp.hpp>
+#include "typedefs.h"
 
-class MyCamera {
+class Camera {
 
 public:
 	enum Mode {
@@ -11,9 +10,9 @@ public:
 		ORTHOGRAPHIC
 	};
 
-	MyTransform transform;
+	Transform transform;
 
-	const RMatrix& GetProjectionMatrix();
+	const Mat4& GetProjectionMatrix();
 
 	Mode GetMode() const;
 	void SetMode(Mode mode);
@@ -34,6 +33,6 @@ private:
 	float fov = 60.0f;
 	float fovy = 1.0f / tanf(fov * 0.5f / 180.0f * PI);
 
-	RMatrix projectionMatrix;
+	Mat4 projectionMatrix;
 	bool dirtyProjMat = true;
 };

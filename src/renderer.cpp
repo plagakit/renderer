@@ -4,15 +4,34 @@
 
 void Renderer::Init()
 {
-	screenTexture = LoadTextureFromImage(GenImageColor(SCREEN_WIDTH, SCREEN_HEIGHT, BLUE));
 	InitFramebuffer();
-
 	ConstructProjectionMatrix();
+
+	// Init OpenGL stuff
+	glGenFramebuffers(1, &FBO);
+	glBindFramebuffer(GL_FRAMEBUFFER, FBO);
+
+	glGenTextures(1, &screenTexture);
+	glBindTexture(GL_TEXTURE_2D, screenTexture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, SCREEN_WIDTH, SCREEN_HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, &fb.colorBuffer.front());
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, screenTexture, 0);
+
+	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+	{
+		std::cout << "Error: OpenGL framebuffer is incomplete." << std::endl;
+		exit(1);
+	}
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 void Renderer::Shutdown()
 {
-	//delete frameBuffer;
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glDeleteFramebuffers(1, &FBO);
 }
 
 void Renderer::SetClearColor(Color color)
@@ -20,12 +39,12 @@ void Renderer::SetClearColor(Color color)
 	clearColor = color;
 }
 
-void Renderer::SetViewMatrix(const RMatrix& view)
+void Renderer::SetViewMatrix(const Mat4& view)
 {
 	viewMatrix = view;
 }
 
-void Renderer::DrawMesh(TriMesh* mesh, RMatrix transform)
+void Renderer::DrawMesh(TriMesh* mesh, Mat4 transform)
 {
 	commandQueue.push_back({ mesh, transform });
 }
@@ -35,7 +54,7 @@ void Renderer::FlushCommands()
 	ClearFramebuffer();
 	config.rasterizedTriangles = 0;
 
-	RMatrix screenMatrix = RMatrix(
+	Mat4 screenMatrix = Mat4(
 		SCREEN_WIDTH * 0.5f, 0, 0, SCREEN_WIDTH * 0.5f,
 		0, SCREEN_HEIGHT * 0.5f, 0, SCREEN_HEIGHT * 0.5f,
 		0, 0, 1, 0,
@@ -62,34 +81,30 @@ void Renderer::FlushCommands()
 			Tri vn = command.mesh->vertexNormals[i];
 
 			// Object Space -> World Space
-			for (auto& p : tri.p)
+			for (Vec3& p : tri.p)
 				vertexShader(p, a, uniforms);
 
-			/*tri.p[0] = tri.p[0].Transform(command.transform);
-			tri.p[1] = tri.p[1].Transform(command.transform);
-			tri.p[2] = tri.p[2].Transform(command.transform);*/
-			for (auto& p : vn.p) 
-				p = p.Transform(command.transform).Normalize();
+			for (Vec3& p : vn.p)
+				p = Vec3(command.transform * Vec4(p.x, p.y, p.z, 1.0f));
 
 
 			// Cull if not facing camera (backface)
-			RVector3 normal = TriangleFaceNormal(tri);
+			Vec3 normal = TriangleFaceNormal(tri);
 			if (config.doBackfaceCulling)
 			{
-				RVector3 cameraFacing = RVector3(0, 0, 1);
-				if (normal.DotProduct(cameraFacing) < 0)
+				Vec3 cameraFacing = Vec3(0, 0, 1);
+				if (glm::dot(normal, cameraFacing) < 0)
 					continue;
+
 			}
 
 			// World Space -> Screen Space
-			for (auto& p : tri.p)
+			for (Vec3& p : tri.p)
 			{
 				// Project onto viewport
-				p = p.Transform(viewMatrix);
-
-				// Transform it into the middle of the screen
-				// (equivalent to moving an imaginary camera)
-				p += RVector3(1.0f, 1.0f, 0);
+				p = Vec3(viewMatrix * Vec4(p.x, p.y, p.z, 1.0f));
+				
+				p += Vec3(1.0f, 1.0f, 0);
 				p.x *= 0.5f * SCREEN_WIDTH;
 				p.y *= 0.5f * SCREEN_HEIGHT;
 			}
@@ -98,24 +113,24 @@ void Renderer::FlushCommands()
 
 			if (config.polygonMode == PolygonMode::POINT)
 			{
-				for (const auto& p : tri.p)
+				for (const Vec3& p : tri.p)
 				{
 					int idx = (int)p.y * SCREEN_WIDTH + (int)p.x;
 					if (idx >= 0 && idx < SCREEN_MAX)
-						fb.colorBuffer[idx] = RAYWHITE;
+						fb.colorBuffer[idx] = WHITE;
 				}
 			}
 			else if (config.polygonMode == PolygonMode::WIREFRAME)
-				DrawTriangle(tri, RAYWHITE);
+				DrawTriangle(tri, WHITE);
 			else if (config.polygonMode == PolygonMode::FILLED || config.polygonMode == PolygonMode::DEPTH_MAP)
-				RasterizeTriangle(tri, vn, normal, GREEN);
+				RasterizeTriangle(tri, vn, normal, WHITE);
 		}
 	}
 
 	if (config.polygonMode == PolygonMode::DEPTH_MAP)
 	{
 		for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
-			fb.colorBuffer[i] = DarkenColor(WHITE, minDepth - fb.depthBuffer[i] + 1); //depthBuffer[i] / minDepth);
+			fb.colorBuffer[i] = DarkenColor(WHITE, minDepth - fb.depthBuffer[i] + 1);
 	}
 
 	commandQueue.clear();
@@ -123,8 +138,16 @@ void Renderer::FlushCommands()
 
 void Renderer::BlitToScreen()
 {
-	UpdateTexture(screenTexture, fb.colorBuffer.data());
-	DrawTexture(screenTexture, 0, 0, WHITE);
+	// update texture with color buffer data
+	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, GL_RGBA, GL_UNSIGNED_BYTE, &fb.colorBuffer.front());
+
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, FBO);	// bind offscreen fb as read fb
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);		// bind default fb as draw fb
+	glBlitFramebuffer(
+		0, 0, SCREEN_WIDTH, SCREEN_HEIGHT,			// source dimensions
+		0, 0, SCREEN_WIDTH, SCREEN_HEIGHT,			// destination dimensions
+		GL_COLOR_BUFFER_BIT, GL_NEAREST				// blit only color with nearest-neighbor sampling
+	);
 }
 
 void Renderer::InitFramebuffer()
@@ -138,7 +161,7 @@ void Renderer::InitFramebuffer()
 
 void Renderer::ClearFramebuffer()
 {
-	std::fill(fb.colorBuffer.begin(), fb.colorBuffer.end(), clearColor);
+	std::fill(fb.colorBuffer.begin(), fb.colorBuffer.end(), BLACK);
 	std::fill(fb.depthBuffer.begin(), fb.depthBuffer.end(), std::numeric_limits<float>::max());
 }
 
@@ -168,21 +191,21 @@ Color Renderer::DarkenColor(Color col, float factor) const
 	};
 }
 
-RVector3 Renderer::TriangleFaceNormal(const Tri& tri) const
+Vec3 Renderer::TriangleFaceNormal(const Tri& tri) const
 {
 	// The two lines running along the face
-	RVector3 line1 = tri.p[1] - tri.p[0];
-	RVector3 line2 = tri.p[2] - tri.p[0];
+	Vec3 line1 = tri.p[1] - tri.p[0];
+	Vec3 line2 = tri.p[2] - tri.p[0];
 
-	return line1.CrossProduct(line2).Normalize();
+	return glm::normalize(glm::cross(line1, line2));//line1.CrossProduct(line2).Normalize();
 }
 
-float Renderer::Triangle2DArea(const RVector3& a, const RVector3& b, const RVector3& c) const
+float Renderer::Triangle2DArea(const Vec3& a, const Vec3& b, const Vec3& c) const
 {
 	return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
 }
 
-bool Renderer::IsPointInsideTriangle2D(const Tri& tri, const RVector3& point) const
+bool Renderer::IsPointInsideTriangle2D(const Tri& tri, const Vec3& point) const
 {
 	float edge01 = Triangle2DArea(tri.p[0], tri.p[1], point);
 	float edge12 = Triangle2DArea(tri.p[1], tri.p[2], point);
@@ -223,7 +246,7 @@ void Renderer::DrawTriangle(const Tri& tri, Color color)
 	DrawLineBresenham(tri.p[2].x, tri.p[2].y, tri.p[0].x, tri.p[0].y, color);
 }
 
-void Renderer::RasterizeTriangle(const Tri& tri, const Tri& vertexNormals, const RVector3& normal, Color color)
+void Renderer::RasterizeTriangle(const Tri& tri, const Tri& vertexNormals, const Vec3& normal, Color color)
 {
 	// We treat this triangle as a 2D triangle, ignoring Z
 	float area = Triangle2DArea(tri.p[0], tri.p[1], tri.p[2]);
@@ -233,7 +256,8 @@ void Renderer::RasterizeTriangle(const Tri& tri, const Tri& vertexNormals, const
 	//if (config.lightingType == LightingType::FLAT)
 	//{
 		// Map (-1, 1) to (1, 0), from dot prod. to shading factor
-	float fac = (-normal.DotProduct(lightDirection) + 1) * 0.5f;
+	float fac = (-glm::dot(normal, lightDirection) + 1) * 0.5f;
+	//float fac = (-normal.DotProduct(lightDirection) + 1) * 0.5f;
 	color = DarkenColor(color, fac);
 	//}
 
@@ -249,7 +273,7 @@ void Renderer::RasterizeTriangle(const Tri& tri, const Tri& vertexNormals, const
 		for (int y = minY; y < maxY; y++)
 		{
 			int idx = y * SCREEN_WIDTH + x;
-			RVector3 point = RVector3(x, y, 0);
+			Vec3 point = Vec3(x, y, 0);
 
 			if (config.useDepthBuffer)
 			{

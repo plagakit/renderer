@@ -5,5 +5,7 @@ void DefaultVertexShader(
 	VertexAttributes& attributes, 
 	const VertexUniforms& uniforms)
 {
-	vertex = vertex.Transform(uniforms.modelViewMatrix);
+
+	Vec4 v = uniforms.modelViewMatrix * Vec4(vertex, 1.0f);
+	vertex = Vec3(v.x, v.y, v.z);
 }

@@ -1,9 +1,12 @@
 #pragma once
 
-#include "my_transform.h"
-#include "renderer.h"
+#include "typedefs.h"
 #include "camera.h"
+#include "renderer.h"
 #include "imgui.h"
+
+#define FRAME_TIME_SAMPLES 10
+#define SAMPLE_TIME_MAX 1
 
 class Scene {
 
@@ -15,19 +18,16 @@ public:
 
 
 private:
-	const static int SCREEN_WIDTH = 1280;
-	const static int SCREEN_HEIGHT = 720;
-
 	Renderer renderer;
 
-	MyTransform object;
-	RVector3 angularVelocity = RVector3(0.0f, -1.0f, -1.0f);
+	Transform object;
+	Vec3 angularVelocity = Vec3(0.0f, -1.0f, -1.0f);
 
-	MyCamera camera;
+	Camera camera;
 
 	int currentMeshIndex = 0;
 	TriMesh* currentMesh;
-	RMatrix currentTransform = RMatrix::Identity();
+	Mat4 currentTransform = Mat4(1.0f);
 
 	TriMesh cube;
 	TriMesh suzanne;
@@ -35,5 +35,10 @@ private:
 
 	ImFont* font;
 	void DrawConfigGUI();
+
+	float frameTimes[FRAME_TIME_SAMPLES];
+	int frameTimeIdx;
+	float avgFrameTime;
+	float sampleTime;
 
 };

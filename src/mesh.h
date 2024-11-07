@@ -1,10 +1,11 @@
 #pragma once
 
-#include "raylib-cpp.hpp"
+#include "typedefs.h"
 #include <vector>
+#include <string>
 
 struct Tri {
-	RVector3 p[3];
+	Vec3 p[3];
 };
 
 struct TriMesh {
@@ -12,5 +13,5 @@ struct TriMesh {
 	std::vector<Tri> tris;
 	std::vector<Tri> vertexNormals;
 
-	static bool LoadFromOBJ(const std::string& path, TriMesh& outMesh, const RMatrix& modelMatrix = RMatrix::Identity());
+	static bool LoadFromOBJ(const std::string& path, TriMesh& outMesh, const Mat4& modelMatrix = Mat4(1.0f));
 };

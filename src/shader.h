@@ -1,17 +1,17 @@
 #pragma once
 
-#include <raylib-cpp.hpp>
+#include "typedefs.h"
 
 struct VertexAttributes {
-	RVector3 normal;
+	Vec3 normal;
 };
 
 struct VertexUniforms {
-	RMatrix modelMatrix;
-	RMatrix modelViewMatrix;
+	Mat4 modelMatrix;
+	Mat4 modelViewMatrix;
 };
 
-using Vertex = RVector3;
+using Vertex = Vec3;
 using VertexShader = void(*)(Vertex&, VertexAttributes&, const VertexUniforms&);
 
 void DefaultVertexShader(Vertex& v, VertexAttributes& va, const VertexUniforms& uniform);
