@@ -5,7 +5,6 @@
 void Renderer::Init()
 {
 	InitFramebuffer();
-	ConstructProjectionMatrix();
 
 	// Init OpenGL stuff
 	glGenFramebuffers(1, &FBO);
@@ -39,98 +38,123 @@ void Renderer::SetClearColor(Color color)
 	clearColor = color;
 }
 
-void Renderer::SetViewMatrix(const Mat4& view)
+void Renderer::DrawMesh(Mesh* mesh, Mat4 transform, Mat4 view, Mat4 proj)
 {
-	viewMatrix = view;
-}
-
-void Renderer::DrawMesh(TriMesh* mesh, Mat4 transform)
-{
-	commandQueue.push_back({ mesh, transform });
+	VertexUniforms u = { transform, view, proj, proj * view * transform };
+	commandQueue.push_back({ mesh, u });
 }
 
 void Renderer::FlushCommands()
 {
 	ClearFramebuffer();
-	config.rasterizedTriangles = 0;
+	metrics.rasterizedTriangles = 0;
+	metrics.clippedTriangles = 0;
 
-	Mat4 screenMatrix = Mat4(
-		SCREEN_WIDTH * 0.5f, 0, 0, SCREEN_WIDTH * 0.5f,
-		0, SCREEN_HEIGHT * 0.5f, 0, SCREEN_HEIGHT * 0.5f,
-		0, 0, 1, 0,
-		0, 0, 0, 1
-	);
-
-	viewMatrix = camera.GetProjectionMatrix();//screenMatrix * projectionMatrix;
-	
 	for (const auto& command : commandQueue)
 	{
 		if (!command.mesh)
 			continue;
 
-		VertexAttributes a;
+		Vec3 cameraPos = Vec3(
+			command.uniforms.view[0][3], 
+			command.uniforms.view[1][3], 
+			command.uniforms.view[2][3]
+		);
 
-		VertexUniforms uniforms = {
-			command.transform,
-			command.transform
-		};
-
-		for (int i = 0; i < command.mesh->tris.size(); i++)
+		for (int i = 0; i < command.mesh->v.size() / 3; i++)
 		{
-			Tri tri = command.mesh->tris[i];
-			Tri vn = command.mesh->vertexNormals[i];
+			//metrics.modelSpace = command.mesh->tris[i];
 
-			// Object Space -> World Space
-			for (Vec3& p : tri.p)
-				vertexShader(p, a, uniforms);
+			Tri tri = {
+				command.mesh->v[i * 3],
+				command.mesh->v[i * 3 + 1],
+				command.mesh->v[i * 3 + 2]
+			};
 
-			for (Vec3& p : vn.p)
-				p = Vec3(command.transform * Vec4(p.x, p.y, p.z, 1.0f));
+			// Model Space -> Clip Space
+			vertexShader(tri.v0, command.uniforms, &metrics);
+			vertexShader(tri.v1, command.uniforms, nullptr);
+			vertexShader(tri.v2, command.uniforms, nullptr);
 
+			metrics.clipSpace = tri;
+			tri.faceNormal = TriangleFaceNormal(tri.v0.p, tri.v1.p, tri.v2.p);
 
-			// Cull if not facing camera (backface)
-			Vec3 normal = TriangleFaceNormal(tri);
-			if (config.doBackfaceCulling)
+			// Near-culling 
+			Tri subTris[2] = { tri };
+			int subTrisCount = 1;
+			if (config.doNearCulling)
 			{
-				Vec3 cameraFacing = Vec3(0, 0, 1);
-				if (glm::dot(normal, cameraFacing) < 0)
-					continue;
-
+				subTrisCount = ClipTriAgainstPlane({ config.nearPlanePos, config.nearPlaneNormal },
+					tri,
+					subTris[0], subTris[1]);
 			}
-
-			// World Space -> Screen Space
-			for (Vec3& p : tri.p)
-			{
-				// Project onto viewport
-				p = Vec3(viewMatrix * Vec4(p.x, p.y, p.z, 1.0f));
 				
-				p += Vec3(1.0f, 1.0f, 0);
-				p.x *= 0.5f * SCREEN_WIDTH;
-				p.y *= 0.5f * SCREEN_HEIGHT;
-			}
 
-			config.rasterizedTriangles++;
-
-			if (config.polygonMode == PolygonMode::POINT)
+			for (int j = 0; j < subTrisCount; j++)
 			{
-				for (const Vec3& p : tri.p)
+				Tri& tri = subTris[j];
+
+				// Perspective division
+				for (Vertex& v : tri.v)
 				{
-					int idx = (int)p.y * SCREEN_WIDTH + (int)p.x;
-					if (idx >= 0 && idx < SCREEN_MAX)
-						fb.colorBuffer[idx] = WHITE;
+					float w = v.p.w;
+					v.p /= w;
+					v.p.w = w;
 				}
+
+				metrics.ndcSpace = tri;
+
+				// Backface culling
+				if (config.doBackfaceCulling)
+				{
+					if (Triangle2DArea(tri.v0.p, tri.v1.p, tri.v2.p) <= 0)
+						continue;
+				}
+
+				// Clip Space -> Screen Space
+				for (int i = 0; i < 3; i++)
+				{
+					tri.v[i].p.x = (tri.v[i].p.x + 1.0f) * 0.5f * SCREEN_WIDTH;
+					tri.v[i].p.y = (tri.v[i].p.y + 1.0f) * 0.5f * SCREEN_HEIGHT;
+				}
+
+				metrics.screenSpace = tri;
+				metrics.rasterizedTriangles++;
+
+				if (config.polygonMode == PolygonMode::POINT)
+				{
+					for (const auto& v : tri.v)
+					{
+						int x = (int)v.p.x;
+						int y = (int)v.p.y;
+						if (x >= 0 && x < SCREEN_WIDTH && y >= 0 && y < SCREEN_HEIGHT)
+							fb.colorBuffer[y * SCREEN_WIDTH + x] = WHITE;
+					}
+				}
+				else if (config.polygonMode == PolygonMode::WIREFRAME)
+				{
+					for (int i = 0; i < 3; i++)
+					{
+						int x0 = (int)tri.v[i].p.x;
+						int y0 = (int)tri.v[i].p.y;
+						int x1 = (int)tri.v[(i + 1) % 3].p.x;
+						int y1 = (int)tri.v[(i + 1) % 3].p.y;
+						DrawLineBresenham(x0, y0, x1, y1, WHITE);
+					}
+				}
+				else if (config.polygonMode == PolygonMode::FILLED || config.polygonMode == PolygonMode::DEPTH_MAP)
+					RasterizeTriangle(tri);
 			}
-			else if (config.polygonMode == PolygonMode::WIREFRAME)
-				DrawTriangle(tri, WHITE);
-			else if (config.polygonMode == PolygonMode::FILLED || config.polygonMode == PolygonMode::DEPTH_MAP)
-				RasterizeTriangle(tri, vn, normal, WHITE);
 		}
 	}
 
 	if (config.polygonMode == PolygonMode::DEPTH_MAP)
 	{
 		for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
-			fb.colorBuffer[i] = DarkenColor(WHITE, minDepth - fb.depthBuffer[i] + 1);
+		{
+			//float factor = (fb.depthBuffer[i] - minDepth) / (maxDepth - minDepth);
+			fb.colorBuffer[i] = DarkenColor(WHITE, 1 - fb.depthBuffer[i]);
+		}
 	}
 
 	commandQueue.clear();
@@ -155,31 +179,20 @@ void Renderer::InitFramebuffer()
 	for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
 	{
 		fb.colorBuffer.push_back(BLACK);
-		fb.depthBuffer.push_back(std::numeric_limits<float>::max());
+		fb.depthBuffer.push_back(1.0f);//std::numeric_limits<float>::max());
 	}
 }
 
 void Renderer::ClearFramebuffer()
 {
 	std::fill(fb.colorBuffer.begin(), fb.colorBuffer.end(), BLACK);
-	std::fill(fb.depthBuffer.begin(), fb.depthBuffer.end(), std::numeric_limits<float>::max());
+	std::fill(fb.depthBuffer.begin(), fb.depthBuffer.end(), 1.0f);//std::numeric_limits<float>::max());
+
+	minDepth = std::numeric_limits<float>::max();
+	maxDepth = std::numeric_limits<float>::min();
 }
 
 // HELPER FUNCTIONS
-
-void Renderer::ConstructProjectionMatrix()
-{
-	//float right = near * tanf(fov * 0.5f * DEG2RAD);
-	//float top = right * aspectRatio;
-
-	//projectionMatrix.m0 = near / right;
-	//projectionMatrix.m5 = near / top;
-	//projectionMatrix.m10 = -(far + near) / (far - near);
-	//projectionMatrix.m11 = -1.0f;
-	//projectionMatrix.m14 = -(2.0f * far * near) / (far - near);
-	//projectionMatrix.m15 = 0.0f;
-	//projectionMatrix = RMatrix::Perspective(fov, aspectRatio, near, far);
-}
 
 Color Renderer::DarkenColor(Color col, float factor) const
 {
@@ -191,27 +204,145 @@ Color Renderer::DarkenColor(Color col, float factor) const
 	};
 }
 
-Vec3 Renderer::TriangleFaceNormal(const Tri& tri) const
+Color Renderer::LerpColor(Color begin, Color end, float t) const
 {
-	// The two lines running along the face
-	Vec3 line1 = tri.p[1] - tri.p[0];
-	Vec3 line2 = tri.p[2] - tri.p[0];
-
-	return glm::normalize(glm::cross(line1, line2));//line1.CrossProduct(line2).Normalize();
+	return {
+		(unsigned char)(begin.r + t * (end.r - begin.r)),
+		(unsigned char)(begin.g + t * (end.g - begin.g)),
+		(unsigned char)(begin.b + t * (end.b - begin.b)),
+		(unsigned char)(begin.a + t * (end.a - begin.a)),
+	};
 }
 
-float Renderer::Triangle2DArea(const Vec3& a, const Vec3& b, const Vec3& c) const
+bool Renderer::IsEdgeTopOrLeft(Vec3 a, Vec3 b) const
+{
+	return a.x > b.x;
+}
+
+bool Renderer::IsPointInsideTriangle2D(Vec3 a, Vec3 b, Vec3 c, Vec3 point) const
+{
+	return Triangle2DArea(a, b, point) >= 0
+		&& Triangle2DArea(b, c, point) >= 0
+		&& Triangle2DArea(c, a, point) >= 0;
+}
+
+float Renderer::Triangle2DArea(Vec3 a, Vec3 b, Vec3 c) const
 {
 	return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
 }
 
-bool Renderer::IsPointInsideTriangle2D(const Tri& tri, const Vec3& point) const
+float Renderer::TriangleHomogenousArea(Vec4 a, Vec4 b, Vec4 c) const
 {
-	float edge01 = Triangle2DArea(tri.p[0], tri.p[1], point);
-	float edge12 = Triangle2DArea(tri.p[1], tri.p[2], point);
-	float edge20 = Triangle2DArea(tri.p[2], tri.p[0], point);
+	return (b.x / b.w - a.x / a.w) * (c.y / c.w - a.y / a.w) 
+		- (b.y / b.w - a.y / a.w) * (c.x / c.w - a.x / a.w);
+}
 
-	return edge01 >= 0 && edge12 >= 0 && edge20 >= 0;
+Vec3 Renderer::TriangleFaceNormal(Vec3 a, Vec3 b, Vec3 c) const
+{
+	// The two lines running along the face
+	Vec3 line1 = b - a;
+	Vec3 line2 = c - a;
+	return glm::normalize(glm::cross(line1, line2));
+}
+
+float Renderer::LinePlaneIntersection(Plane plane, Line line, Vec4& intersection) const
+{
+	//planeNormal = glm::normalize(planeNormal);
+	float planeD = -glm::dot(plane.normal, plane.pos);
+	float ad = glm::dot(Vec3(line.start), plane.normal);
+	float bd = glm::dot(Vec3(line.end), plane.normal);
+	float t = (-planeD - ad) / (bd - ad);
+
+	intersection = line.start + t * (line.end - line.start);
+	return t;
+}
+
+int Renderer::ClipTriAgainstPlane(Plane plane, Tri tri, Tri& outTri1, Tri& outTri2)
+{
+	//planeNormal = glm::normalize(planeNormal);
+
+	const Vertex* inside[3];
+	const Vertex* outside[3];
+	int numInside = 0;
+	int numOutside = 0;
+	
+	for (int i = 0; i < 3; i++)
+	{
+		float dist = (
+			plane.normal.x * tri.v[i].p.x
+			+ plane.normal.y * tri.v[i].p.y 
+			+ plane.normal.z * tri.v[i].p.z
+			- glm::dot(plane.normal, plane.pos)
+		);
+
+		if (dist >= 0)	
+			inside[numInside++] = &tri.v[i];
+		else			
+			outside[numOutside++] = &tri.v[i];
+	}
+
+	// All points outside of the plane - discard tri
+	if (numInside == 0)
+		return 0;
+
+	// All points are inside the plane - tri is all good
+	if (numInside == 3)
+	{
+		outTri1 = tri;
+		return 1;
+	}
+
+	metrics.clippedTriangles++;
+
+	// One point inside -> clip w/ plane to form a triangle
+	if (numInside == 1 && numOutside == 2)
+	{
+		outTri1.v0 = *inside[0];
+
+		float t1 = LinePlaneIntersection(plane, { inside[0]->p, outside[0]->p }, outTri1.v1.p);
+		outTri1.v1.t = inside[0]->t + t1 * (outside[0]->t - inside[0]->t);
+		outTri1.v1.c = inside[0]->c + t1 * (outside[0]->c - inside[0]->c);
+
+		float t2 = LinePlaneIntersection(plane, { inside[0]->p, outside[1]->p }, outTri1.v2.p);
+		outTri1.v2.t = inside[0]->t + t2 * (outside[1]->t - inside[0]->t);
+		outTri1.v2.c = inside[0]->c + t2 * (outside[1]->c - inside[0]->c);
+
+		if (!IsCounterClockwise(outTri1))
+			std::swap(outTri1.v0, outTri1.v2);
+
+		return 1;
+	}
+
+	// Two points inside -> clip w/ plane to form a quad
+	if (numInside == 2 && numOutside == 1)
+	{
+		outTri1.v0 = *inside[0];
+		outTri1.v1 = *inside[1];
+		float t1 = LinePlaneIntersection(plane, { inside[0]->p, outside[0]->p }, outTri1.v2.p);
+		outTri1.v2.t = inside[0]->t + t1 * (outside[0]->t - inside[0]->t);
+		//outTri1.v2.c = LerpColor(inside[0]->c, outside[0]->c, t1);
+
+		outTri2.v0 = outTri1.v2;
+		outTri2.v1 = *inside[1];
+		float t2 = LinePlaneIntersection(plane, { inside[1]->p, outside[0]->p }, outTri2.v2.p);
+		outTri2.v2.t = inside[1]->t + t2 * (outside[0]->t - inside[1]->t);
+		//outTri2.v2.c = LerpColor(inside[1]->c, outside[0]->c, t2);
+
+		if (!IsCounterClockwise(outTri1)) 
+			std::swap(outTri1.v0, outTri1.v2);
+		if (!IsCounterClockwise(outTri2)) 
+			std::swap(outTri2.v0, outTri2.v2);
+
+		return 2;
+	}
+
+	return -1;
+}
+
+bool Renderer::IsCounterClockwise(Tri& t) const
+{
+	float area = (t.v1.p.x - t.v0.p.x) * (t.v2.p.y - t.v0.p.y) - (t.v1.p.y - t.v0.p.y) * (t.v2.p.x - t.v0.p.x);
+	return area > 0;
 }
 
 void Renderer::DrawLineBresenham(int x0, int y0, int x1, int y1, Color color)
@@ -222,8 +353,7 @@ void Renderer::DrawLineBresenham(int x0, int y0, int x1, int y1, Color color)
 
 	while (true) 
 	{
-		int idx = y0 * SCREEN_WIDTH + x0;
-		if (idx >= 0 && idx < SCREEN_MAX)
+		if (x0 >= 0 && x0 < SCREEN_WIDTH && y0 >= 0 && y0 < SCREEN_HEIGHT)
 			fb.colorBuffer[y0 * SCREEN_WIDTH + x0] = color;
 
 		if (x0 == x1 && y0 == y1) 
@@ -234,52 +364,60 @@ void Renderer::DrawLineBresenham(int x0, int y0, int x1, int y1, Color color)
 	}
 }
 
-//void Renderer::DrawPixel(int x, int y, Color color)
-//{
-//	fb.colorBuffer[y * SCREEN_WIDTH + x] = color;
-//}
-
-void Renderer::DrawTriangle(const Tri& tri, Color color)
+void Renderer::RasterizeTriangle(Tri tri)
 {
-	DrawLineBresenham(tri.p[0].x, tri.p[0].y, tri.p[1].x, tri.p[1].y, color);
-	DrawLineBresenham(tri.p[1].x, tri.p[1].y, tri.p[2].x, tri.p[2].y, color);
-	DrawLineBresenham(tri.p[2].x, tri.p[2].y, tri.p[0].x, tri.p[0].y, color);
-}
+	float area = Triangle2DArea(tri.v0.p, tri.v1.p, tri.v2.p);
 
-void Renderer::RasterizeTriangle(const Tri& tri, const Tri& vertexNormals, const Vec3& normal, Color color)
-{
-	// We treat this triangle as a 2D triangle, ignoring Z
-	float area = Triangle2DArea(tri.p[0], tri.p[1], tri.p[2]);
-	if (area <= 0)
-		return;
+	// Perpsective-correct attribute interpolation
+	if (config.doPerspCorrectInterp)
+	{
+		for (Vertex& v : tri.v)
+		{
+			v.c /= v.p.w;
+			v.t /= v.p.w;
+			v.p.w = 1.0f / v.p.w;
+		}
+	}
 
-	//if (config.lightingType == LightingType::FLAT)
-	//{
-		// Map (-1, 1) to (1, 0), from dot prod. to shading factor
-	float fac = (-glm::dot(normal, lightDirection) + 1) * 0.5f;
-	//float fac = (-normal.DotProduct(lightDirection) + 1) * 0.5f;
-	color = DarkenColor(color, fac);
-	//}
+	float fac = (-glm::dot(tri.faceNormal, lightDirection) + 1) * 0.5f;
+	Color darkedCol = DarkenColor(WHITE, fac);
+
+	// Biases for abiding by fill rules
+	//int bias0 = IsEdgeTopOrLeft(tri.p[1], tri.p[2]) ? 0 : -1;
+	//int bias1 = IsEdgeTopOrLeft(tri.p[2], tri.p[0]) ? 0 : -1;
+	//int bias2 = IsEdgeTopOrLeft(tri.p[0], tri.p[1]) ? 0 : -1;
 
 	// Only check the pixels in the triangle's bounding box
-	int minX = std::max(0, static_cast<int>(std::floorf(std::min({ tri.p[0].x, tri.p[1].x, tri.p[2].x }))));
-	int maxX = std::min(SCREEN_WIDTH, static_cast<int>(std::ceilf(std::max({ tri.p[0].x, tri.p[1].x, tri.p[2].x }))));
-	int minY = std::max(0, static_cast<int>(std::floorf(std::min({ tri.p[0].y, tri.p[1].y, tri.p[2].y }))));
-	int maxY = std::min(SCREEN_HEIGHT, static_cast<int>(std::ceilf(std::max({ tri.p[0].y, tri.p[1].y, tri.p[2].y }))));
+	int minX = std::max(0, static_cast<int>(std::floorf(std::min({ tri.v0.p.x, tri.v1.p.x, tri.v2.p.x }))));
+	int maxX = std::min(SCREEN_WIDTH, static_cast<int>(std::ceilf(std::max({ tri.v0.p.x, tri.v1.p.x, tri.v2.p.x }))));
+	int minY = std::max(0, static_cast<int>(std::floorf(std::min({ tri.v0.p.y, tri.v1.p.y, tri.v2.p.y }))));
+	int maxY = std::min(SCREEN_HEIGHT, static_cast<int>(std::ceilf(std::max({ tri.v0.p.y, tri.v1.p.y, tri.v2.p.y }))));
+	
+	// Incremental Pineda rasterization
+	Vec3 point = Vec3(minX, minY, 0.0f);
+	float row12 = Triangle2DArea(tri.v1.p, tri.v2.p, point);
+	float row20 = Triangle2DArea(tri.v2.p, tri.v0.p, point);
+	float row01 = Triangle2DArea(tri.v0.p, tri.v1.p, point);
 
-	// Test every pixel to see if it is inside the triangle
-	for (int x = minX; x < maxX; x++)
+	// https://fgiesen.wordpress.com/2013/02/10/optimizing-the-basic-rasterizer/
+	float A01 = tri.v0.p.y - tri.v1.p.y;
+	float A12 = tri.v1.p.y - tri.v2.p.y;
+	float A20 = tri.v2.p.y - tri.v0.p.y;
+	float B01 = tri.v1.p.x - tri.v0.p.x;
+	float B12 = tri.v2.p.x - tri.v1.p.x;
+	float B20 = tri.v0.p.x - tri.v2.p.x;
+
+	for (int y = minY; y < maxY; y++)
 	{
-		for (int y = minY; y < maxY; y++)
-		{
-			int idx = y * SCREEN_WIDTH + x;
-			Vec3 point = Vec3(x, y, 0);
+		float edge01 = row01;
+		float edge12 = row12;
+		float edge20 = row20;
 
+		for (int x = minX; x < maxX; x++)
+		{
 			if (config.useDepthBuffer)
 			{
-				float edge01 = Triangle2DArea(tri.p[0], tri.p[1], point);
-				float edge12 = Triangle2DArea(tri.p[1], tri.p[2], point);
-				float edge20 = Triangle2DArea(tri.p[2], tri.p[0], point);
+				int idx = y * SCREEN_WIDTH + x;
 
 				// Triangle area is positive when the third point is
 				// "to the right" of the line formed by first and second
@@ -287,48 +425,76 @@ void Renderer::RasterizeTriangle(const Tri& tri, const Tri& vertexNormals, const
 				// right of every edge.
 				if (edge01 >= 0 && edge12 >= 0 && edge20 >= 0)
 				{
-					edge01 /= area;
-					edge12 /= area;
-					edge20 /= area;
+					float alpha = edge12 / area;
+					float beta = edge20 / area;
+					float gamma = 1.0f - alpha - beta;
 
 					// Interpolate the depth along the tri w/ barycentric coords
-					float z = tri.p[0].z * edge12
-						+ tri.p[1].z * edge20
-						+ tri.p[2].z * edge01;
+					float z = tri.v0.p.z * alpha
+							+ tri.v1.p.z * beta
+							+ tri.v2.p.z * gamma;
+
 					if (z < fb.depthBuffer[idx])
 					{
 						fb.depthBuffer[idx] = z;
+						if (z < minDepth) minDepth = z;
+						if (z > maxDepth) maxDepth = z;
 
-						//if (config.lightingType == LightingType::GOURAUD)
-						//{
-						//	float alpha = edge12;
-						//	float beta = edge20;
-						//	float gamma = 1 - alpha - beta;
+						float w = (
+							config.doPerspCorrectInterp 
+							? tri.v0.p.w * alpha + tri.v1.p.w * beta + tri.v2.p.w * gamma
+							: 1.0f
+						);
 
-						//	RVector3 interpNormal = RVector3(
-						//		vertexNormals.p[0] * alpha
-						//		+ vertexNormals.p[1] * beta
-						//		+ vertexNormals.p[2] * gamma
-						//	).Normalize();
+						if (config.objectColor == ObjectColor::COLORED_VERTS)
+						{
+							Vec3 color = (tri.v0.c * alpha + tri.v1.c * beta + tri.v2.c * gamma) / w;
+							fb.colorBuffer[idx] = {
+								static_cast<unsigned char>(color.r * 255),
+								static_cast<unsigned char>(color.g * 255),
+								static_cast<unsigned char>(color.b * 255),
+								255
+							};
+						}
+						else if (config.objectColor == ObjectColor::CHECKERBOARD)
+						{
+							Vec2 uv = (tri.v0.t * alpha + tri.v1.t * beta + tri.v2.t * gamma) / w;
 
-						//	//interpNormal = interpNormal.RotateByQuaternion();
-						//	//interpNormal = interpNormal.Transform(objRotZ).Transform(objRotX);
-						//	float dot = (-interpNormal.DotProduct(lightDirection) + 1) * 0.5f;
-						//	fb.colorBuffer[idx] = DarkenColor(color, dot);
-						//}
-						//else if (config.lightingType == LightingType::FLAT)
-							fb.colorBuffer[idx] = color;
-						
-						if (z < minDepth)
-							minDepth = z;
+							const float M = 15.0f;
+							float pattern = (fmodf(uv.x * M, 1.0f) > 0.5f) ^ (fmodf(uv.y * M, 1.0f) < 0.5f);
+							unsigned char col = static_cast<unsigned char>(pattern * 255);
+							fb.colorBuffer[idx] = { col, col, col, 255 };
+						}
+						else if (config.objectColor == ObjectColor::TEXTURED)
+						{
+							Vec2 uv = (tri.v0.t * alpha + tri.v1.t * beta + tri.v2.t * gamma) / w;
+
+							int u = static_cast<int>(uv.x * testTexture.width);
+							int v = static_cast<int>(uv.y * testTexture.height);
+							int tx = (v * testTexture.width + u) * 4;
+							if (tx >= 0 && tx < testTexture.width * testTexture.height * 4)
+								fb.colorBuffer[idx] = { testTexture.data[tx], testTexture.data[tx + 1], testTexture.data[tx + 2], 255 };
+						}
+						else
+						{
+							fb.colorBuffer[idx] = darkedCol;
+						}
 					}
 				}
 			}
 			else
 			{
-				if (IsPointInsideTriangle2D(tri, point))
-					fb.colorBuffer[idx] = color;
+				if (edge01 >= 0 && edge12 >= 0 && edge20 >= 0)
+					fb.colorBuffer[y * SCREEN_WIDTH + x] = darkedCol;
 			}
+			
+			edge01 += A01;
+			edge12 += A12;
+			edge20 += A20;
 		}
+
+		row01 += B01;
+		row12 += B12;
+		row20 += B20;
 	}
 }

@@ -1,17 +1,28 @@
 #pragma once
 
-#include "typedefs.h"
+#include "common.h"
 #include <vector>
 #include <string>
 
-struct Tri {
-	Vec3 p[3];
+struct Mesh {
+	int vertCount = 0;
+	std::vector<Vertex> v;
+
+	static bool LoadFromOBJ(std::string path, Mesh& outMesh, bool isRHS = true, const Mat4& modelMatrix = Mat4(1.0f));
 };
 
-struct TriMesh {
-	int vertCount = 0;
-	std::vector<Tri> tris;
-	std::vector<Tri> vertexNormals;
+struct Texture {
 
-	static bool LoadFromOBJ(const std::string& path, TriMesh& outMesh, const Mat4& modelMatrix = Mat4(1.0f));
+	int width;
+	int height;
+	int channels;
+	unsigned char* data;
+
+	Texture(const char* path);
+	~Texture();
+
+	Texture() = delete;
+	Texture(const Texture& t) = delete;
+	Texture operator=(const Texture& t) = delete;
+
 };

@@ -1,9 +1,10 @@
 #pragma once
 
-#include "typedefs.h"
+#include "common.h"
 #include "camera.h"
 #include "renderer.h"
 #include "imgui.h"
+#include <string>
 
 #define FRAME_TIME_SAMPLES 10
 #define SAMPLE_TIME_MAX 1
@@ -16,6 +17,7 @@ public:
 	void Render();
 	void Shutdown();
 
+	void OnKeyInput(int key, int action);
 
 private:
 	Renderer renderer;
@@ -25,16 +27,20 @@ private:
 
 	Camera camera;
 
-	int currentMeshIndex = 0;
-	TriMesh* currentMesh;
-	Mat4 currentTransform = Mat4(1.0f);
+	Mesh triangle;
+	Mesh cube;
+	Mesh suzanne;
+	Mesh teapot;
 
-	TriMesh cube;
-	TriMesh suzanne;
-	TriMesh teapot;
+	int currentMeshIndex = 0;
+	static const char* meshNames[];
+	const std::vector<Mesh*> meshes = { &triangle, &cube, &suzanne, &teapot };
 
 	ImFont* font;
 	void DrawConfigGUI();
+
+	bool isKeyDown[GLFW_KEY_LAST];
+	bool isKeyJustDown[GLFW_KEY_LAST];
 
 	float frameTimes[FRAME_TIME_SAMPLES];
 	int frameTimeIdx;

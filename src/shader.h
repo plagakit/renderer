@@ -1,18 +1,15 @@
 #pragma once
 
-#include "typedefs.h"
-
-struct VertexAttributes {
-	Vec3 normal;
-};
+#include "common.h"
 
 struct VertexUniforms {
-	Mat4 modelMatrix;
-	Mat4 modelViewMatrix;
+	Mat4 model;
+	Mat4 view;
+	Mat4 projection;
+	Mat4 MVP;
 };
 
-using Vertex = Vec3;
-using VertexShader = void(*)(Vertex&, VertexAttributes&, const VertexUniforms&);
+using VertexShader = void(*)(Vertex&, const VertexUniforms&, void* m);
 
-void DefaultVertexShader(Vertex& v, VertexAttributes& va, const VertexUniforms& uniform);
+void DefaultVertexShader(Vertex& v, const VertexUniforms& u, void* m);
 

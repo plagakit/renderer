@@ -1,79 +1,90 @@
 #include "mesh.h"
 
+#define TINYOBJLOADER_IMPLEMENTATION 
+#include "tiny_obj_loader.h"
+
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_FAILURE_USERMSG
+#include "stb_image.h"
+
+#include <iostream>
 #include <fstream>
 #include <strstream>
 
-bool TriMesh::LoadFromOBJ(const std::string& path, TriMesh& outMesh, const Mat4& model)
+bool Mesh::LoadFromOBJ(std::string path, Mesh& outMesh, bool isRHS, const Mat4& model)
 {
-	std::ifstream f(path);
-	if (!f.is_open())
-		return false;
+	tinyobj::attrib_t attrib;
+	std::vector<tinyobj::shape_t> shapes;
+	std::vector<tinyobj::material_t> materials;
 
-	TriMesh mesh;
-	std::vector<Vec3> vertices;
-	std::vector<Vec3> vNormals;
+	std::string warn;
+	std::string err;
 
-	while (!f.eof())
+	bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, path.c_str());
+
+	if (!warn.empty())	std::cout << warn << std::endl;
+	if (!err.empty())	std::cerr << err << std::endl;
+	if (!ret) return false;
+
+	for (const auto& face : shapes[0].mesh.indices)
 	{
-		char line[128];
-		f.getline(line, 128);
+		Vertex v;
+		int vid = face.vertex_index;
+		int nid = face.normal_index;
+		int tid = face.texcoord_index;
 
-		std::strstream s;
-		s << line;
+		// Vertex positions
+		v.p.x = attrib.vertices[vid * 3];
+		v.p.y = attrib.vertices[vid * 3 + 1];
+		v.p.z = attrib.vertices[vid * 3 + 2] * (isRHS ? -1.0f : 1.0f);
+		v.p.w = 1.0f;
+		v.p = model * v.p;
 
-		char junk;
-
-		// Vertex
-		if (line[0] == 'v' && line[1] == ' ')
+		// Vertex normals
+		if (vid >= 0) 
 		{
-			Vec3 v;
-			s >> junk >> v.x >> v.y >> v.z;
-			mesh.vertCount++;
-			vertices.push_back(v);
+			v.n.x = attrib.normals[nid * 3];
+			v.n.y = attrib.normals[nid * 3 + 1];
+			v.n.z = attrib.normals[nid * 3 + 2];
+			v.n = Vec3(model * Vec4(v.n, 0.0f));
 		}
 
-		// Vertex normal
-		else if (line[0] == 'v' && line[1] == 'n')
+		// Texture coordinates
+		if (tid >= 0)
 		{
-			Vec3 v;
-			s >> junk >> junk >> v.x >> v.y >> v.z;
-			vNormals.push_back(v);
+			v.t.x = attrib.texcoords[tid * 2];
+			v.t.y = attrib.texcoords[tid * 2 + 1];
 		}
 
-		// Face
-		else if (line[0] == 'f' && line[1] == ' ')
-		{
-			int f[3], n[3];
-			int i = 0;
+		// Colors
+		v.c.r = attrib.colors[3 * face.vertex_index + 0];
+		v.c.g = attrib.colors[3 * face.vertex_index + 1];
+		v.c.b = attrib.colors[3 * face.vertex_index + 2];
 
-			s >> junk;
-			std::string token;
-			while (s >> token)
-			{
-				size_t pos1 = token.find('/');
-				f[i] = std::stoi(token.substr(0, pos1));
+		outMesh.vertCount++;
+		outMesh.v.push_back(v);
+	}
+}
 
-				std::string remainder = token.substr(pos1 + 1, std::string::npos);
-				size_t pos2 = remainder.find('/');
-				n[i] = std::stoi(remainder.substr(pos2 + 1, std::string::npos));
-
-				i++;
-			}
-
-			Tri tri = { vertices[f[0] - 1], vertices[f[1] - 1], vertices[f[2] - 1] };
-			Tri normals = { vNormals[n[0] - 1], vNormals[n[1] - 1], vNormals[n[2] - 1] };
-
-			for (auto& p : tri.p)		p = Vec3(model * Vec4(p.x, p.y, p.z, 1.0f));//p = p.Transform(model);
-			for (auto& p : normals.p)	p = Vec3(model * Vec4(p.x, p.y, p.z, 1.0f));//p = p.Transform(model);
-
-			mesh.tris.push_back(tri);
-			mesh.vertexNormals.push_back(normals);
-		}
-
-		else
-			s >> junk;
+Texture::Texture(const char* path)
+{
+	int success = stbi_info(path, &width, &height, &channels);
+	if (!success)
+	{
+		std::cout << "Error finding texture '" << path << "': " << stbi_failure_reason() << std::endl;
+		exit(1);
 	}
 
-	outMesh = mesh;
-	return true;
+	stbi_set_flip_vertically_on_load(true);
+	data = stbi_load(path, &width, &height, &channels, 4);
+	if (data == NULL)
+	{
+		std::cout << "Error loading texture '" << path << "': " << stbi_failure_reason() << std::endl;
+		exit(1);
+	}
+}
+
+Texture::~Texture()
+{
+	stbi_image_free(data);
 }

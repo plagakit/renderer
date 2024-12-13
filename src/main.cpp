@@ -5,7 +5,7 @@
 #include <GLFW/glfw3.h>
 
 #include "scene.h"
-#include "typedefs.h"
+#include "common.h"
 #include <stdio.h>
 
 #ifdef PLATFORM_WEB
@@ -34,6 +34,8 @@ static void glfw_key_callback(GLFWwindow* window, int key, int scancode, int act
 {
 	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
 		exit(0);
+
+	scene.OnKeyInput(key, action);
 }
 
 int main()
@@ -110,7 +112,7 @@ void UpdateDrawFrame(void)
 	g_fps = 1 / (sum / MAX_SAMPLES);
 
 	// Update
-	scene.Update(g_dt);
+	scene.Update(static_cast<float>(g_dt));
 
 	// Render
 	glfwPollEvents();
