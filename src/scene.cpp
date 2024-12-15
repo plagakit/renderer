@@ -5,7 +5,8 @@
 #include "imgui_impl_opengl3.h"
 #include <iostream>
 
-const char* Scene::meshNames[] = {"Triangle", "Cube", "Suzanne", "Teapot"};
+const char* Scene::meshNames[] = {"Triangle", "Cube", "Suzanne", "Teapot", "Neeko" };
+const char* Scene::textureNames[] = { "UV Map Test", "Neeko" };
 
 void Scene::Init()
 {
@@ -27,16 +28,19 @@ void Scene::Init()
 
 	Mat4 cubeModel = glm::scale(Mat4(1.0f), Vec3(0.5f, 0.5f, 0.5f));
 	Mesh::LoadFromOBJ("res/cube.obj", cube, true, cubeModel);
-	for (auto& v : cube.v)
-		v.c = Vec3(1, 1, 1);
+	for (auto& v : cube.v) v.c = Vec3(RandomFloat(), RandomFloat(), RandomFloat());
 
 	Mat4 suzanneModel = glm::scale(Mat4(1.0f), Vec3(0.5f, 0.5f, 0.5f));
 	Mesh::LoadFromOBJ("res/suzanne.obj", suzanne, true, suzanneModel);
-	for (auto& v : suzanne.v)
-		v.c = Vec3(1, 1, 1);
+	for (auto& v : suzanne.v) v.c = Vec3(RandomFloat(), RandomFloat(), RandomFloat());
 
 	Mat4 teapotModel = glm::translate(glm::scale(Mat4(1.0f), Vec3(0.2f, 0.2f, 0.2f)), Vec3(0, -1, 0));
 	Mesh::LoadFromOBJ("res/teapot.obj", teapot, true, teapotModel);
+	for (auto& v : teapot.v) v.c = Vec3(RandomFloat(), RandomFloat(), RandomFloat());
+
+	Mat4 neekoModel = Mat4(1.0f);
+	Mesh::LoadFromOBJ("res/neeko.obj", neeko, true, neekoModel);
+	for (auto& v : neeko.v) v.c = Vec3(RandomFloat(), RandomFloat(), RandomFloat());
 
 	currentMeshIndex = 1;
 	object.position.z = 3;
@@ -80,10 +84,17 @@ void Scene::Update(float dt)
 	cameraMove = camera.transform.rotation * cameraMove;
 	camera.transform.position += cameraMove;
 
-	if (isKeyDown[GLFW_KEY_J])	camera.transform.rotation = glm::quat(glm::vec3(0, -dt, 0)) * camera.transform.rotation;
-	if (isKeyDown[GLFW_KEY_L])	camera.transform.rotation = glm::quat(glm::vec3(0, dt, 0)) * camera.transform.rotation;
-	if (isKeyDown[GLFW_KEY_I])	camera.transform.rotation *= glm::quat(glm::vec3(-dt, 0, 0));
-	if (isKeyDown[GLFW_KEY_K])	camera.transform.rotation *= glm::quat(glm::vec3(dt, 0, 0));
+	if (isKeyDown[GLFW_KEY_H])	camera.transform.rotation = glm::quat(glm::vec3(0, -dt, 0)) * camera.transform.rotation;
+	if (isKeyDown[GLFW_KEY_K])	camera.transform.rotation = glm::quat(glm::vec3(0, dt, 0)) * camera.transform.rotation;
+
+	// Weeeeeeeird bug on web where K is I and I doesn't work. Just use ImGui instead
+#ifdef __EMSCRIPTEN__
+	if (ImGui::IsKeyDown(ImGuiKey_U))	camera.transform.rotation *= glm::quat(glm::vec3(-dt, 0, 0));
+	if (ImGui::IsKeyDown(ImGuiKey_J))	camera.transform.rotation *= glm::quat(glm::vec3(dt, 0, 0));
+#else
+	if (isKeyDown[GLFW_KEY_U])	camera.transform.rotation *= glm::quat(glm::vec3(-dt, 0, 0));
+	if (isKeyDown[GLFW_KEY_J])	camera.transform.rotation *= glm::quat(glm::vec3(dt, 0, 0));
+#endif
 
 	if (isKeyJustDown[GLFW_KEY_R])
 	{
@@ -100,12 +111,17 @@ void Scene::Update(float dt)
 
 void Scene::Render()
 {
-	renderer.DrawMesh(
+	Renderer::RenderCommand c = {
 		meshes[currentMeshIndex],
-		object.GetTransform(), 
-		camera.GetViewMatrix(), 
-		camera.GetProjectionMatrix()
-	);
+		textures[currentTextureIndex],
+		{
+			object.GetTransform(),
+			camera.GetViewMatrix(),
+			camera.GetProjectionMatrix(),
+			camera.GetProjectionMatrix() * camera.GetViewMatrix() * object.GetTransform()
+		}
+	};
+	renderer.SendCommand(c);
 
 	renderer.FlushCommands();
 	renderer.BlitToScreen();
@@ -113,6 +129,31 @@ void Scene::Render()
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
+
+// Drawing the FBO to the screen works on desktop but not with WebGL in Emscripten
+// for some reason, so we're doing a little hack where we draw our screen texture
+// into an ImGui window
+#ifdef __EMSCRIPTEN__
+	ImGuiWindowFlags SCREEN_FLAGS = ImGuiWindowFlags_NoTitleBar |
+		ImGuiWindowFlags_NoResize |
+		ImGuiWindowFlags_NoMove |
+		ImGuiWindowFlags_NoCollapse |
+		ImGuiWindowFlags_NoScrollbar |
+		ImGuiWindowFlags_NoScrollWithMouse |
+		ImGuiWindowFlags_NoBringToFrontOnFocus |
+		ImGuiWindowFlags_NoNavFocus |
+		ImGuiWindowFlags_NoDecoration |
+		ImGuiWindowFlags_NoInputs |
+		ImGuiWindowFlags_NoNavInputs |
+		ImGuiWindowFlags_NoMove;
+
+	ImGui::SetNextWindowPos(ImVec2(0, 0));
+	ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
+
+	ImGui::Begin("Framebuffer", nullptr, SCREEN_FLAGS);
+	ImGui::Image((ImTextureID)renderer.GetGLScreenTexture(), ImVec2(SCREEN_WIDTH, SCREEN_HEIGHT), {0, 1}, { 1, 0 });
+	ImGui::End();
+#endif
 
 	ImGui::PushFont(font);
 	DrawConfigGUI();
@@ -162,11 +203,11 @@ void Scene::DrawConfigGUI()
 	ImGui::SetNextWindowPos(ImVec2(10, 10));
 	ImGui::SetNextWindowSize(ImVec2(0, 0)); // size 0 will make the window autofit conte
 	ImGui::Begin("Configuration & Metrics", NULL, WINDOW_FLAGS);
-
+	
 	//ImGui::ShowDemoWindow();
 	ImGui::Text("W/S - Forward/Back, A/D - Left/Right, Q/E - Up/Down");
-	ImGui::Text("I/K - Look Up/Down, J/L - Look Left/Right");
-	ImGui::Text("R - Switch to next mesh");
+	ImGui::Text("U/J - Look Up/Down, H/K - Look Left/Right");
+	ImGui::Text("R - Cycle next mesh");
 	ImGui::Separator();
 	ImGui::Text("FPS: %.01f", g_fps);
 	ImGui::SameLine(); ImGui::SetCursorPosX(80);
@@ -175,6 +216,7 @@ void Scene::DrawConfigGUI()
 	ImGui::Text("ms (avg %.01f)", (float)(avgFrameTime * 1000));
 
 	ImGui::Combo("Mesh", &currentMeshIndex, &meshNames[0], static_cast<int>(meshes.size()));
+	
 
 	ImGui::Text("Vertices: %d, Triangles: %d", meshes[currentMeshIndex]->vertCount, 0);
 	ImGui::Text("Rasterized Triangles: %d", renderer.metrics.rasterizedTriangles);
@@ -183,8 +225,13 @@ void Scene::DrawConfigGUI()
 	const char* pmTypes[] = { "Point", "Wireframe", "Filled", "Depth Map" };
 	ImGui::Combo("Polygon Mode", (int*)&renderer.config.polygonMode, pmTypes, std::size(pmTypes));
 
-	const char* ocTypes[] = { "Flat", "Coloured Vertices", "Checkerboard", "Textured" };
-	ImGui::Combo("Object Color", (int*)&renderer.config.objectColor, ocTypes, std::size(ocTypes));
+	if (renderer.config.polygonMode == Renderer::PolygonMode::FILLED)
+	{
+		const char* ocTypes[] = { "Flat", "Coloured Vertices", "Checkerboard", "Textured" };
+		ImGui::Combo("Object Color", (int*)&renderer.config.objectColor, ocTypes, std::size(ocTypes));
+		if (renderer.config.objectColor == Renderer::ObjectColor::TEXTURED)
+			ImGui::Combo("Texture", &currentTextureIndex, &textureNames[0], static_cast<int>(textures.size()));
+	}
 
 	ImGui::Checkbox("Use Depth Buffer", &renderer.config.useDepthBuffer);
 	ImGui::Checkbox("Do Backface Culling", &renderer.config.doBackfaceCulling);
@@ -274,8 +321,13 @@ void Scene::DrawConfigGUI()
 		i = 0;
 		ImGui::Text("Screen Space");
 		for (const auto& v : renderer.metrics.screenSpace.v)
-			ImGui::Text("\t v%d: (%0.2f, %0.2f, %0.2f, %0.2f)", i++, v.p.x, v.p.y, v.p.z, v.p.w);
+			ImGui::Text("\t v%d: (%d, %d, %0.2f, %0.2f)", i++, static_cast<int>(v.p.x), static_cast<int>(v.p.y), v.p.z, v.p.w);
 	}
-
+	
 	ImGui::End();
+}
+
+float Scene::RandomFloat() const
+{
+	return static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
 }

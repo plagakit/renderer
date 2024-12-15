@@ -2,13 +2,19 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 #include <glad/glad.h>
+
+//#ifdef __EMSCRIPTEN__
+//#include <GLES2/gl2.h>
+//#endif
 #include <GLFW/glfw3.h>
+
 
 #include "scene.h"
 #include "common.h"
 #include <stdio.h>
+#include <iostream>
 
-#ifdef PLATFORM_WEB
+#ifdef __EMSCRIPTEN__
 #include <emscripten/emscripten.h>
 #endif
 
@@ -40,24 +46,34 @@ static void glfw_key_callback(GLFWwindow* window, int key, int scancode, int act
 
 int main()
 {
-	// Disable raylib warnings (GetWindowScaleDPI is warned every frame on web)
-#ifdef PLATFORM_WEB
-	SetTraceLogLevel(LOG_ERROR);
-#endif
-
 	// Create window
 	glfwSetErrorCallback(glfw_error_callback);
 	if (!glfwInit()) 
 		return 1;
 
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+	// Disabled b/c causes "hint not supported" on web wasm
+	//glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+	//glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+	//glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+#ifdef __EMSCRIPTEN__
+	std::cout << "WE ARE IN EMSCRIPTEN!  yar\n";
+	EM_ASM(console.log("Debug: Emscripten runtime active."));
+
+	//EmscriptenWebGLContextAttributes atrs;
+	//emscripten_webgl_init_context_attributes(&atrs);
+	//atrs.majorVersion = 2;
+	//atrs.minorVersion = 0;
+	//emctx = emscripten_webgl_create_context(id, &atrs);
+	//emscripten_webgl_make_context_current(emctx);
+	//std::cout << "GL_VERSION=" << glGetString(GL_VERSION) << std::endl;
+#endif
+
 	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 	window = glfwCreateWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Renderer", NULL, NULL);
 	glfwMakeContextCurrent(window);
 	glfwSetKeyCallback(window, glfw_key_callback);
-	glfwSwapInterval(1); // vsync
+	//glfwSwapInterval(1); // vsync
 
 	if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
 		return 1;
@@ -71,8 +87,11 @@ int main()
 	ImGui_ImplGlfw_InitForOpenGL(window, true);
 #ifdef __EMSCRIPTEN__
 	ImGui_ImplGlfw_InstallEmscriptenCallbacks(window, "#canvas");
-#endif
+	ImGui_ImplOpenGL3_Init("#version 300 es");
+#else
 	ImGui_ImplOpenGL3_Init("#version 130");
+#endif
+	
 
 	glViewport(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 	glClearColor(0, 0, 0, 1);
@@ -81,8 +100,8 @@ int main()
 
 	oldTime = glfwGetTime();
 
+#ifdef __EMSCRIPTEN__
 	// Web main loop
-#ifdef PLATFORM_WEB
 	emscripten_set_main_loop(UpdateDrawFrame, 0, 1);
 #else
 	// Desktop main loop
@@ -117,5 +136,8 @@ void UpdateDrawFrame(void)
 	// Render
 	glfwPollEvents();
 	scene.Render();
+
+#ifndef __EMSCRIPTEN__
 	glfwSwapBuffers(window);
+#endif
 }

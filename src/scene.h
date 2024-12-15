@@ -31,10 +31,18 @@ private:
 	Mesh cube;
 	Mesh suzanne;
 	Mesh teapot;
+	Mesh neeko;
+
+	Texture testTexture{ "res/uv_map_2.png" };;
+	Texture neekoTexture{ "res/neeko.png" };
 
 	int currentMeshIndex = 0;
 	static const char* meshNames[];
-	const std::vector<Mesh*> meshes = { &triangle, &cube, &suzanne, &teapot };
+	const std::vector<Mesh*> meshes = { &triangle, &cube, &suzanne, &teapot, &neeko };
+
+	int currentTextureIndex = 0;
+	static const char* textureNames[];
+	const std::vector<Texture*> textures = { &testTexture, &neekoTexture };
 
 	ImFont* font;
 	void DrawConfigGUI();
@@ -46,5 +54,7 @@ private:
 	int frameTimeIdx;
 	float avgFrameTime;
 	float sampleTime;
+
+	float RandomFloat() const;
 
 };

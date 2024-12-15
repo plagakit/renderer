@@ -64,6 +64,8 @@ bool Mesh::LoadFromOBJ(std::string path, Mesh& outMesh, bool isRHS, const Mat4& 
 		outMesh.vertCount++;
 		outMesh.v.push_back(v);
 	}
+
+	return true;
 }
 
 Texture::Texture(const char* path)

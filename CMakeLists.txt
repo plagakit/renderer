@@ -10,7 +10,9 @@ if (NOT glfw3_FOUND)
     set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
     set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-    FetchContent_MakeAvailable(glfw)
+    if (NOT EMSCRIPTEN)
+        FetchContent_MakeAvailable(glfw)
+    endif()
     FetchContent_MakeAvailable(glad)
 endif()
 
@@ -52,13 +54,12 @@ file(COPY ${RESOURCES_DIR} DESTINATION ${CMAKE_BINARY_DIR})
 if (EMSCRIPTEN)
     # Tell Emscripten to build an example.html file.
     set_target_properties(${PROJECT_NAME} PROPERTIES SUFFIX ".html")
-
-	# Required linker flags for using Raylib with Emscripten
-    target_link_options(${PROJECT_NAME} PRIVATE -sEXPORTED_FUNCTIONS=['_main','_malloc'] -sEXPORTED_RUNTIME_METHODS=ccall -sUSE_GLFW=3 -sALLOW_MEMORY_GROWTH --preload-file ${RESOURCES_DIR})
+    target_link_options(${PROJECT_NAME} PRIVATE  -sUSE_GLFW=3 -sALLOW_MEMORY_GROWTH -sASSERTIONS=1 -sWASM=1 -sUSE_WEBGL2=1 -sMIN_WEBGL_VERSION=2 --preload-file ${RESOURCES_DIR})
 
     # https://github.com/pongasoft/emscripten-glfw?tab=readme-ov-file
-    target_compile_options(${PROJECT_NAME} PUBLIC "--use-port=contrib.glfw3")
-    target_link_options(${PROJECT_NAME} PUBLIC "--use-port=contrib.glfw3")
+    target_compile_definitions(${PROJECT_NAME} PRIVATE PLATFORM_WEB=1)
+    target_compile_options(${PROJECT_NAME} PUBLIC -O3 --use-port=contrib.glfw3)
+    target_link_options(${PROJECT_NAME} PUBLIC --use-port=contrib.glfw3)
 
 endif()
 

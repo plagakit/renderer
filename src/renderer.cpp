@@ -38,10 +38,15 @@ void Renderer::SetClearColor(Color color)
 	clearColor = color;
 }
 
-void Renderer::DrawMesh(Mesh* mesh, Mat4 transform, Mat4 view, Mat4 proj)
+//void Renderer::DrawMesh(Mesh* mesh, Mat4 transform, Mat4 view, Mat4 proj)
+//{
+//	VertexUniforms u = { transform, view, proj, proj * view * transform };
+//	commandQueue.push_back({ mesh, u });
+//}
+
+void Renderer::SendCommand(RenderCommand command)
 {
-	VertexUniforms u = { transform, view, proj, proj * view * transform };
-	commandQueue.push_back({ mesh, u });
+	commandQueue.push_back(command);
 }
 
 void Renderer::FlushCommands()
@@ -54,6 +59,8 @@ void Renderer::FlushCommands()
 	{
 		if (!command.mesh)
 			continue;
+
+		curTexture = command.texture;
 
 		Vec3 cameraPos = Vec3(
 			command.uniforms.view[0][3], 
@@ -172,6 +179,11 @@ void Renderer::BlitToScreen()
 		0, 0, SCREEN_WIDTH, SCREEN_HEIGHT,			// destination dimensions
 		GL_COLOR_BUFFER_BIT, GL_NEAREST				// blit only color with nearest-neighbor sampling
 	);
+}
+
+GLuint Renderer::GetGLScreenTexture() const
+{
+	return screenTexture;
 }
 
 void Renderer::InitFramebuffer()
@@ -469,11 +481,11 @@ void Renderer::RasterizeTriangle(Tri tri)
 						{
 							Vec2 uv = (tri.v0.t * alpha + tri.v1.t * beta + tri.v2.t * gamma) / w;
 
-							int u = static_cast<int>(uv.x * testTexture.width);
-							int v = static_cast<int>(uv.y * testTexture.height);
-							int tx = (v * testTexture.width + u) * 4;
-							if (tx >= 0 && tx < testTexture.width * testTexture.height * 4)
-								fb.colorBuffer[idx] = { testTexture.data[tx], testTexture.data[tx + 1], testTexture.data[tx + 2], 255 };
+							int u = static_cast<int>(uv.x * curTexture->width);
+							int v = static_cast<int>(uv.y * curTexture->height);
+							int tx = (v * curTexture->width + u) * 4;
+							if (tx >= 0 && tx < curTexture->width * curTexture->height * 4)
+								fb.colorBuffer[idx] = { curTexture->data[tx], curTexture->data[tx + 1], curTexture->data[tx + 2], 255 };
 						}
 						else
 						{

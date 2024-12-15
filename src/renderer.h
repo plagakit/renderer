@@ -33,6 +33,7 @@ public:
 
 	struct RenderCommand {
 		Mesh* mesh;
+		Texture* texture;
 		VertexUniforms uniforms;
 	};
 
@@ -65,17 +66,19 @@ public:
 	void Shutdown();
 
 	void SetClearColor(Color color);
-	void DrawMesh(Mesh* mesh, Mat4 transform, Mat4 view, Mat4 proj);
+	//void DrawMesh(Mesh* mesh, Mat4 transform, Mat4 view, Mat4 proj);
+	void SendCommand(RenderCommand command);
 
 	void FlushCommands();
 	void BlitToScreen();
 
+	GLuint GetGLScreenTexture() const;
+
 private:
+
 	// For drawing to the window
 	GLuint FBO;
 	GLuint screenTexture;
-
-	Texture testTexture{ "res/uv_map_2.png" };
 
 	std::vector<RenderCommand> commandQueue;
 
@@ -88,6 +91,7 @@ private:
 	void InitFramebuffer();
 	void ClearFramebuffer();
 
+	Texture* curTexture;
 	Color clearColor = BLACK;
 	float minDepth; // for depth map
 	float maxDepth;

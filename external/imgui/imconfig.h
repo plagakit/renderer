@@ -1,3 +1,9 @@
+#ifdef __EMSCRIPTEN__
+#define IMGUI_IMPL_OPENGL_ES2
+#endif
+
+#define IMGUI_IMPL_OPENGL_USE_VERTEX_ARRAY
+
 //-----------------------------------------------------------------------------
 // DEAR IMGUI COMPILE-TIME OPTIONS
 // Runtime options (clipboard callbacks, enabling various features, etc.) can generally be set via the ImGuiIO structure.
