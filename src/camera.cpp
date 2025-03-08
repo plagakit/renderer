@@ -1,6 +1,7 @@
 #include "camera.h"
 
-#include <iostream>
+#include <glm/gtx/string_cast.hpp>
+//#include <iostream>
 
 Camera::Camera()
 {
@@ -75,6 +76,7 @@ void Camera::RecalculateMatrix()
 		projectionMatrix[2][2] = FAR / (FAR - NEAR);
 		projectionMatrix[2][3] = 1.0f;
 		projectionMatrix[3][2] = -(FAR * NEAR) / (FAR - NEAR);
+		//std::cout << glm::to_string(projectionMatrix) << std::endl;
 	}
 	else
 	{

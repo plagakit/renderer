@@ -1,6 +1,9 @@
 ﻿cmake_minimum_required(VERSION 3.13)
 project("renderer")
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 # GLFW
 find_package(glfw3)
 if (NOT glfw3_FOUND)
@@ -38,6 +41,8 @@ endif()
 # MAIN FILES
 add_executable(${PROJECT_NAME})
 add_subdirectory("src")
+#target_compile_options(${PROJECT_NAME} PUBLIC  -O2)
+#STRING (REGEX REPLACE "/RTC(su|[1su])" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
 target_link_libraries(${PROJECT_NAME} 
     PUBLIC glfw glad imgui
     PRIVATE glm::glm-header-only
@@ -64,8 +69,8 @@ if (EMSCRIPTEN)
 endif()
 
 # Raylib MacOS dependencies
-if (APPLE)
-    target_link_libraries(${PROJECT_NAME} "-framework IOKit")
-    target_link_libraries(${PROJECT_NAME} "-framework Cocoa")
-    target_link_libraries(${PROJECT_NAME} "-framework OpenGL")
-endif()
+#if (APPLE)
+#    target_link_libraries(${PROJECT_NAME} "-framework IOKit")
+#    target_link_libraries(${PROJECT_NAME} "-framework Cocoa")
+#    target_link_libraries(${PROJECT_NAME} "-framework OpenGL")
+#endif()

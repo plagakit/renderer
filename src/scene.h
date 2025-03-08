@@ -32,17 +32,28 @@ private:
 	Mesh suzanne;
 	Mesh teapot;
 	Mesh neeko;
+	Mesh megaman;
 
-	Texture testTexture{ "res/uv_map_2.png" };;
+	Texture testTexture{ "res/uv_map_2.png" };
 	Texture neekoTexture{ "res/neeko.png" };
+	Texture megamanTexture{ "res/megaman/megaman.png" };
+
+	DefaultVertexShader vsDefault;
+	PS1VertexShader vsPS1;
+
+	int currentPreset = 0;
 
 	int currentMeshIndex = 0;
-	static const char* meshNames[];
-	const std::vector<Mesh*> meshes = { &triangle, &cube, &suzanne, &teapot, &neeko };
+	static constexpr char* meshNames[] = { "Triangle", "Cube", "Suzanne", "Teapot", "Neeko", "Megaman" };
+	const std::vector<Mesh*> meshes = { &triangle, &cube, &suzanne, &teapot, &neeko, &megaman };
 
 	int currentTextureIndex = 0;
-	static const char* textureNames[];
-	const std::vector<Texture*> textures = { &testTexture, &neekoTexture };
+	static constexpr char* textureNames[] = { "UV Map Test", "Neeko", "Megaman" };
+	const std::vector<Texture*> textures = { &testTexture, &neekoTexture, &megamanTexture };
+
+	int currentVertexShaderIdx = 0;
+	static constexpr char* vsNames[] = { "Default", "PS1" };
+	const std::vector<VertexShader*> vertexShaders = { &vsDefault, &vsPS1 };
 
 	ImFont* font;
 	void DrawConfigGUI();

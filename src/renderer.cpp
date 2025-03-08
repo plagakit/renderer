@@ -38,12 +38,6 @@ void Renderer::SetClearColor(Color color)
 	clearColor = color;
 }
 
-//void Renderer::DrawMesh(Mesh* mesh, Mat4 transform, Mat4 view, Mat4 proj)
-//{
-//	VertexUniforms u = { transform, view, proj, proj * view * transform };
-//	commandQueue.push_back({ mesh, u });
-//}
-
 void Renderer::SendCommand(RenderCommand command)
 {
 	commandQueue.push_back(command);
@@ -54,6 +48,15 @@ void Renderer::FlushCommands()
 	ClearFramebuffer();
 	metrics.rasterizedTriangles = 0;
 	metrics.clippedTriangles = 0;
+	for (int i = 0; i < 3; i++)
+	{
+		metrics.modelSpace[i] = { NAN, NAN, NAN };
+		metrics.worldSpace[i] = { NAN, NAN, NAN, NAN };
+		metrics.viewSpace[i] = { NAN, NAN, NAN, NAN };
+		metrics.clipSpace[i] = { NAN, NAN, NAN, NAN };
+		metrics.ndcSpace[i] = { NAN, NAN, NAN, NAN };
+		metrics.screenSpace[i] = { NAN, NAN, NAN, NAN };
+	}
 
 	for (const auto& command : commandQueue)
 	{
@@ -61,30 +64,30 @@ void Renderer::FlushCommands()
 			continue;
 
 		curTexture = command.texture;
-
-		Vec3 cameraPos = Vec3(
-			command.uniforms.view[0][3], 
-			command.uniforms.view[1][3], 
-			command.uniforms.view[2][3]
-		);
-
-		for (int i = 0; i < command.mesh->v.size() / 3; i++)
+		
+		// Transform every tri in mesh
+		for (int triIdx = 0; triIdx < command.mesh->v.size() / 3; triIdx++)
 		{
-			//metrics.modelSpace = command.mesh->tris[i];
-
 			Tri tri = {
-				command.mesh->v[i * 3],
-				command.mesh->v[i * 3 + 1],
-				command.mesh->v[i * 3 + 2]
+				command.mesh->v[triIdx * 3],
+				command.mesh->v[triIdx * 3 + 1],
+				command.mesh->v[triIdx * 3 + 2]
 			};
 
 			// Model Space -> Clip Space
-			vertexShader(tri.v0, command.uniforms, &metrics);
-			vertexShader(tri.v1, command.uniforms, nullptr);
-			vertexShader(tri.v2, command.uniforms, nullptr);
+			if (triIdx == metrics.curTriIdx)
+				for (int i = 0; i < 3; i++)
+					metrics.modelSpace[i] = tri.v[i].p;
 
-			metrics.clipSpace = tri;
+			// Model Space -> Clip Space
+			command.vertexShader->Process(tri.v0);
+			command.vertexShader->Process(tri.v1);
+			command.vertexShader->Process(tri.v2);
 			tri.faceNormal = TriangleFaceNormal(tri.v0.p, tri.v1.p, tri.v2.p);
+
+			if (triIdx == metrics.curTriIdx)
+				for (int i = 0; i < 3; i++)
+					metrics.clipSpace[i] = tri.v[i].p;
 
 			// Near-culling 
 			Tri subTris[2] = { tri };
@@ -95,7 +98,6 @@ void Renderer::FlushCommands()
 					tri,
 					subTris[0], subTris[1]);
 			}
-				
 
 			for (int j = 0; j < subTrisCount; j++)
 			{
@@ -109,7 +111,9 @@ void Renderer::FlushCommands()
 					v.p.w = w;
 				}
 
-				metrics.ndcSpace = tri;
+				if (triIdx == metrics.curTriIdx)
+					for (int i = 0; i < 3; i++)
+						metrics.ndcSpace[i] = tri.v[i].p;
 
 				// Backface culling
 				if (config.doBackfaceCulling)
@@ -118,16 +122,18 @@ void Renderer::FlushCommands()
 						continue;
 				}
 
-				// Clip Space -> Screen Space
-				for (int i = 0; i < 3; i++)
+				// NDC Space -> Screen Space
+				for (int k = 0; k < 3; k++)
 				{
-					tri.v[i].p.x = (tri.v[i].p.x + 1.0f) * 0.5f * SCREEN_WIDTH;
-					tri.v[i].p.y = (tri.v[i].p.y + 1.0f) * 0.5f * SCREEN_HEIGHT;
+					tri.v[k].p.x = (tri.v[k].p.x + 1.0f) * 0.5f * SCREEN_WIDTH;
+					tri.v[k].p.y = (tri.v[k].p.y + 1.0f) * 0.5f * SCREEN_HEIGHT;
 				}
 
-				metrics.screenSpace = tri;
-				metrics.rasterizedTriangles++;
+				if (triIdx == metrics.curTriIdx)
+					for (int i = 0; i < 3; i++)
+						metrics.screenSpace[i] = tri.v[i].p;
 
+				metrics.rasterizedTriangles++;
 				if (config.polygonMode == PolygonMode::POINT)
 				{
 					for (const auto& v : tri.v)
@@ -485,7 +491,13 @@ void Renderer::RasterizeTriangle(Tri tri)
 							int v = static_cast<int>(uv.y * curTexture->height);
 							int tx = (v * curTexture->width + u) * 4;
 							if (tx >= 0 && tx < curTexture->width * curTexture->height * 4)
-								fb.colorBuffer[idx] = { curTexture->data[tx], curTexture->data[tx + 1], curTexture->data[tx + 2], 255 };
+							{
+								fb.colorBuffer[idx] = {
+									curTexture->data[tx],
+									curTexture->data[tx + 1],
+									curTexture->data[tx + 2], 255
+								};
+							}
 						}
 						else
 						{

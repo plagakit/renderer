@@ -50,39 +50,6 @@ struct Color {
 	unsigned char g;
 	unsigned char b;
 	unsigned char a;
-
-	//static unsigned char LinearToSRGB(float val)
-	//{
-	//	uint32_t MAXV_BITS = 0x3F7FFFFF; // 1.0 - f32::EPSILON
-	//	uint32_t MINV_BITS = 0x39000000; // 2^(-13)
-	//	float minv = *reinterpret_cast<float*>(&MINV_BITS);
-	//	float maxv = *reinterpret_cast<float*>(&MAXV_BITS);
-
-	//	float input = val;
-	//	if (input <= minv)	input = minv;
-	//	if (input > maxv)	input = maxv;
-
-	//	uint32_t fu = *reinterpret_cast<uint32_t*>(&input);
-	//	uint32_t entry = TO_SRGB8_TABLE[((fu - MINV_BITS) >> 20)];
-
-	//	uint32_t bias = (entry >> 16) << 9;
-	//	uint32_t scale = entry & 0xFFFF;
-	//	uint32_t t = (fu >> 15) & 0xFF;
-
-	//	uint32_t res = (bias + scale + t) >> 16;
-	//	return static_cast<unsigned char>(res);
-	//}
-
-	//static Color FromSRGB(Vec3 v)
-	//{
-	//	Color col;
-	//	col.r = LinearToSRGB(v.r);
-	//	col.g = LinearToSRGB(v.g);
-	//	col.b = LinearToSRGB(v.b);
-	//	col.a = 255;
-	//	return col;
-	//}
-
 };
 
 const Color BLACK = { 0, 0, 0, 255 };
@@ -105,28 +72,6 @@ struct Tri {
 		Vertex v[3];
 	};
 	Vec3 faceNormal;
-};
-
-struct Tri3 {
-	union {
-		struct {
-			Vec3 v0;
-			Vec3 v1;
-			Vec3 v2;
-		};
-		Vec3 p[3];
-	};
-};
-
-struct Tri4 {
-	union {
-		struct {
-			Vec4 v0;
-			Vec4 v1;
-			Vec4 v2;
-		};
-		Vec4 p[3];
-	};
 };
 
 struct Line {

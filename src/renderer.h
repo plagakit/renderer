@@ -3,7 +3,7 @@
 #include "common.h"
 #include "mesh.h"
 #include "camera.h"
-#include "shader.h"
+#include "shaders/shader.h"
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
@@ -31,13 +31,15 @@ public:
 	//	FLAT_WHITE,
 	//};
 
-	struct RenderCommand {
+	struct RenderCommand 
+	{
 		Mesh* mesh;
 		Texture* texture;
-		VertexUniforms uniforms;
+		VertexShader* vertexShader;
 	};
 
-	struct Config {
+	struct Config 
+	{
 		PolygonMode polygonMode = PolygonMode::FILLED;
 		ObjectColor objectColor = ObjectColor::TEXTURED;
 		bool useDepthBuffer = true;
@@ -50,15 +52,17 @@ public:
 	};
 	Config config;
 
-	struct Metrics {
-		int rasterizedTriangles = 0;
-		int clippedTriangles = 0;
-		Tri3 modelSpace;
-		Tri4 worldSpace;
-		Tri4 viewSpace;
-		Tri clipSpace;
-		Tri ndcSpace;
-		Tri screenSpace;
+	struct Metrics 
+	{
+		uint32_t curTriIdx = 0;
+		uint32_t rasterizedTriangles = 0;
+		uint32_t clippedTriangles = 0;
+		Vec3 modelSpace[3];
+		Vec4 worldSpace[3];
+		Vec4 viewSpace[3];
+		Vec4 clipSpace[3];
+		Vec4 ndcSpace[3];
+		Vec4 screenSpace[3];
 	};
 	Metrics metrics;
 
@@ -66,7 +70,9 @@ public:
 	void Shutdown();
 
 	void SetClearColor(Color color);
-	//void DrawMesh(Mesh* mesh, Mat4 transform, Mat4 view, Mat4 proj);
+	void SetModel(const Mat4& model);
+	void SetView(const Mat4& view);
+	void SetProjection(const Mat4& projection);
 	void SendCommand(RenderCommand command);
 
 	void FlushCommands();
@@ -74,9 +80,10 @@ public:
 
 	GLuint GetGLScreenTexture() const;
 
+
 private:
 
-	// For drawing to the window
+	// For drawing pixels to the window
 	GLuint FBO;
 	GLuint screenTexture;
 
@@ -98,7 +105,7 @@ private:
 
 	Vec3 lightDirection = glm::normalize(Vec3(1, 1, -1));
 
-	VertexShader vertexShader = DefaultVertexShader;
+	/*VertexShader vertexShader = DefaultVertexShader;*/
 
 	Color DarkenColor(Color col, float factor) const;
 	Color LerpColor(Color begin, Color end, float t) const;

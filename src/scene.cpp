@@ -5,9 +5,6 @@
 #include "imgui_impl_opengl3.h"
 #include <iostream>
 
-const char* Scene::meshNames[] = {"Triangle", "Cube", "Suzanne", "Teapot", "Neeko" };
-const char* Scene::textureNames[] = { "UV Map Test", "Neeko" };
-
 void Scene::Init()
 {
 	std::cout << "Initting ImGui..." << std::endl;
@@ -38,9 +35,12 @@ void Scene::Init()
 	Mesh::LoadFromOBJ("res/teapot.obj", teapot, true, teapotModel);
 	for (auto& v : teapot.v) v.c = Vec3(RandomFloat(), RandomFloat(), RandomFloat());
 
-	Mat4 neekoModel = Mat4(1.0f);
+	Mat4 neekoModel = glm::scale(Mat4(1.0f), Vec3(1.5f, 1.5f, 1.5f));
 	Mesh::LoadFromOBJ("res/neeko.obj", neeko, true, neekoModel);
 	for (auto& v : neeko.v) v.c = Vec3(RandomFloat(), RandomFloat(), RandomFloat());
+
+	Mat4 megamanModel = glm::translate(glm::scale(Mat4(1.0f), Vec3(.04f, .04f, .04f)), Vec3(0, 10, 0));
+	Mesh::LoadFromOBJ("res/megaman/megaman.obj", megaman, true, megamanModel);
 
 	currentMeshIndex = 1;
 	object.position.z = 3;
@@ -107,19 +107,21 @@ void Scene::Update(float dt)
 	for (int i = 0; i < GLFW_KEY_LAST; i++)
 		if (isKeyJustDown[i])
 			isKeyJustDown[i] = false;
+
 }
 
 void Scene::Render()
 {
+	vsDefault.SetModel(object.GetTransform());
+	vsDefault.SetView(camera.GetViewMatrix());
+	vsDefault.SetProjection(camera.GetProjectionMatrix());
+
+	vsPS1.SetMVP(camera.GetProjectionMatrix() * camera.GetViewMatrix() * object.GetTransform());
+
 	Renderer::RenderCommand c = {
 		meshes[currentMeshIndex],
 		textures[currentTextureIndex],
-		{
-			object.GetTransform(),
-			camera.GetViewMatrix(),
-			camera.GetProjectionMatrix(),
-			camera.GetProjectionMatrix() * camera.GetViewMatrix() * object.GetTransform()
-		}
+		vertexShaders[currentVertexShaderIdx]
 	};
 	renderer.SendCommand(c);
 
@@ -205,6 +207,74 @@ void Scene::DrawConfigGUI()
 	ImGui::Begin("Configuration & Metrics", NULL, WINDOW_FLAGS);
 	
 	//ImGui::ShowDemoWindow();
+
+	const char* presets[] = { "Spinning Cube", "Neeko", "PS1 Megaman", "Triangle" };
+	if (ImGui::Combo("Preset", &currentPreset, presets, std::size(presets)))
+	{
+		object.position = Vec3(0.0f, 0.0f, 3.0f);
+		object.rotation = Quat();
+		object.scale = Vec3(1.0f);
+		camera.transform.position = Vec3(0.0f, 0.0f, 0.0f);
+		camera.transform.rotation = Quat();
+
+		// Spinning Cube preset
+		if (currentPreset == 0)
+		{
+			angularVelocity = Vec3(0.2f, -1.0f, -1.5f);
+			currentMeshIndex = 1;
+			currentTextureIndex = 0;
+			currentVertexShaderIdx = 0;
+
+			renderer.config.polygonMode = Renderer::PolygonMode::FILLED;
+			renderer.config.objectColor = Renderer::ObjectColor::TEXTURED;
+			renderer.config.doBackfaceCulling = true;
+			renderer.config.doPerspCorrectInterp = true;
+			renderer.config.useDepthBuffer = true;
+
+
+		}
+		// Neeko preset
+		else if (currentPreset == 1)
+		{
+			angularVelocity = Vec3(0.0f, -1.0f, 0.0f);
+			currentMeshIndex = 4;
+			currentTextureIndex = 1;
+			currentVertexShaderIdx = 0;
+
+			renderer.config.polygonMode = Renderer::PolygonMode::FILLED;
+			renderer.config.objectColor = Renderer::ObjectColor::TEXTURED;
+			renderer.config.useDepthBuffer = true;
+			renderer.config.doBackfaceCulling = true;
+			renderer.config.doPerspCorrectInterp = true;
+		}
+		// Megaman PS1 preset
+		else if (currentPreset == 2)
+		{
+			angularVelocity = Vec3(0.0f, -1.0f, 0.0f);
+			currentMeshIndex = 5;
+			currentTextureIndex = 2;
+			currentVertexShaderIdx = 1;
+			vsPS1.SetRounding(50.0f);
+
+			renderer.config.polygonMode = Renderer::PolygonMode::FILLED;
+			renderer.config.objectColor = Renderer::ObjectColor::TEXTURED;
+			renderer.config.useDepthBuffer = true;
+			renderer.config.doBackfaceCulling = true;
+			renderer.config.doPerspCorrectInterp = false;
+		}
+		// Triangle
+		else if (currentPreset == 3)
+		{
+			angularVelocity = Vec3(0.0f, 0.0f, 0.0f);
+			currentMeshIndex = 0;
+			currentVertexShaderIdx = 0;
+
+			renderer.config.polygonMode = Renderer::PolygonMode::FILLED;
+			renderer.config.objectColor = Renderer::ObjectColor::COLORED_VERTS;
+			renderer.config.doPerspCorrectInterp = true;
+		}
+	}
+
 	ImGui::Text("W/S - Forward/Back, A/D - Left/Right, Q/E - Up/Down");
 	ImGui::Text("U/J - Look Up/Down, H/K - Look Left/Right");
 	ImGui::Text("R - Cycle next mesh");
@@ -216,7 +286,6 @@ void Scene::DrawConfigGUI()
 	ImGui::Text("ms (avg %.01f)", (float)(avgFrameTime * 1000));
 
 	ImGui::Combo("Mesh", &currentMeshIndex, &meshNames[0], static_cast<int>(meshes.size()));
-	
 
 	ImGui::Text("Vertices: %d, Triangles: %d", meshes[currentMeshIndex]->vertCount, 0);
 	ImGui::Text("Rasterized Triangles: %d", renderer.metrics.rasterizedTriangles);
@@ -244,6 +313,18 @@ void Scene::DrawConfigGUI()
 		{
 			InputVec3("Pos", renderer.config.nearPlanePos);
 			InputVec3("Normal", renderer.config.nearPlaneNormal);
+		}
+	}
+
+	if (ImGui::CollapsingHeader("Vertex Shader"))
+	{
+		ImGui::Combo("Current VS", &currentVertexShaderIdx, &vsNames[0], static_cast<int>(vertexShaders.size()));
+		
+		if (currentVertexShaderIdx == 1)
+		{
+			float r = vsPS1.GetRounding();
+			ImGui::InputFloat("Rounding", &r, 0.0f, 0.0f, "%.1f");
+			vsPS1.SetRounding(r);
 		}
 	}
 
@@ -288,40 +369,48 @@ void Scene::DrawConfigGUI()
 		InputVec3("Object Scale", object.scale);
 	}
 
-	if (ImGui::CollapsingHeader("Triangle Coordinates"))
+	if (ImGui::CollapsingHeader("Mesh Coordinates"))
 	{
+		uint32_t count = meshes[currentMeshIndex]->v.size() / 3;
+
+		if (ImGui::ArrowButton("##left", ImGuiDir_Left)) 
+			renderer.metrics.curTriIdx = (renderer.metrics.curTriIdx == 0) ? count - 1 : renderer.metrics.curTriIdx - 1;;
+		ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
+		if (ImGui::ArrowButton("##right", ImGuiDir_Right)) 
+			renderer.metrics.curTriIdx = (renderer.metrics.curTriIdx + 1) % count;
+
+		ImGui::SameLine();
+		ImGui::Text("Current Triangle: %d/%d", renderer.metrics.curTriIdx + 1, count);
+
 		int i = 0;
 		ImGui::Text("Model Space");
-		ImGui::Text("TODO (currently broken)\n");
-		//for (const auto& p : renderer.metrics.modelSpace.p)
-		//	ImGui::Text("\t v%d: (%0.2f, %0.2f, %0.2f)", i++, p.x, p.y, p.z);
+		for (const auto& p : renderer.metrics.modelSpace)
+			ImGui::Text("\t v%d: (%0.2f, %0.2f, %0.2f)", i++, p.x, p.y, p.z);
 
 		i = 0;
 		ImGui::Text("World Space");
-		ImGui::Text("TODO (currently broken)\n");
-		/*for (const auto& p : renderer.metrics.worldSpace.p)
-			ImGui::Text("\t v%d: (%0.2f, %0.2f, %0.2f, %0.2f)", i++, p.x, p.y, p.z, p.w);*/
+		for (const auto& p : renderer.metrics.worldSpace)
+			ImGui::Text("\t v%d: (%0.2f, %0.2f, %0.2f, %0.2f)", i++, p.x, p.y, p.z, p.w);
 
 		i = 0;
 		ImGui::Text("View Space");
-		ImGui::Text("TODO (currently broken)\n");
-		//for (const auto& p : renderer.metrics.viewSpace.p)
-		//	ImGui::Text("\t v%d: (%0.2f, %0.2f, %0.2f, %0.2f)", i++, p.x, p.y, p.z, p.w);
+		for (const auto& p : renderer.metrics.viewSpace)
+			ImGui::Text("\t v%d: (%0.2f, %0.2f, %0.2f, %0.2f)", i++, p.x, p.y, p.z, p.w);
 
 		i = 0;
 		ImGui::Text("Clip Space");
-		for (const auto& v : renderer.metrics.clipSpace.v)
-			ImGui::Text("\t v%d: (%0.2f, %0.2f, %0.2f, %0.2f)", i++, v.p.x, v.p.y, v.p.z, v.p.w);
+		for (const auto& v : renderer.metrics.clipSpace)
+			ImGui::Text("\t v%d: (%0.2f, %0.2f, %0.2f, %0.2f)", i++, v.x, v.y, v.z, v.w);
 
 		i = 0;
 		ImGui::Text("Normalized Device Coordinates");
-		for (const auto& v : renderer.metrics.ndcSpace.v)
-			ImGui::Text("\t v%d: (%0.2f, %0.2f, %0.2f, %0.2f)", i++, v.p.x, v.p.y, v.p.z, v.p.w);
+		for (const auto& v : renderer.metrics.ndcSpace)
+			ImGui::Text("\t v%d: (%0.2f, %0.2f, %0.2f, %0.2f)", i++, v.x, v.y, v.z, v.w);
 
 		i = 0;
 		ImGui::Text("Screen Space");
-		for (const auto& v : renderer.metrics.screenSpace.v)
-			ImGui::Text("\t v%d: (%d, %d, %0.2f, %0.2f)", i++, static_cast<int>(v.p.x), static_cast<int>(v.p.y), v.p.z, v.p.w);
+		for (const auto& v : renderer.metrics.screenSpace)
+			ImGui::Text("\t v%d: (%.0f, %.0f, %0.2f, %0.2f)", i++, v.x, v.y, v.z, v.w);
 	}
 	
 	ImGui::End();
