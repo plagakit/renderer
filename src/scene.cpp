@@ -42,7 +42,7 @@ void Scene::Init()
 	Mat4 megamanModel = glm::translate(glm::scale(Mat4(1.0f), Vec3(.04f, .04f, .04f)), Vec3(0, 10, 0));
 	Mesh::LoadFromOBJ("res/megaman/megaman.obj", megaman, true, megamanModel);
 
-	currentMeshIndex = 1;
+	meshes.SetCurrent("Cube");
 	object.position.z = 3;
 
 	std::cout << "Initting renderer..." << std::endl;
@@ -97,11 +97,7 @@ void Scene::Update(float dt)
 #endif
 
 	if (isKeyJustDown[GLFW_KEY_R])
-	{
-		currentMeshIndex++;
-		if (currentMeshIndex >= meshes.size())
-			currentMeshIndex = 0;
-	}
+		meshes.Increment();
 
 
 	for (int i = 0; i < GLFW_KEY_LAST; i++)
@@ -112,16 +108,25 @@ void Scene::Update(float dt)
 
 void Scene::Render()
 {
+	float time = glfwGetTime() * 1000.0f;
+	Mat4 MVP = camera.GetProjectionMatrix() * camera.GetViewMatrix() * object.GetTransform();
+
 	vsDefault.SetModel(object.GetTransform());
 	vsDefault.SetView(camera.GetViewMatrix());
 	vsDefault.SetProjection(camera.GetProjectionMatrix());
 
-	vsPS1.SetMVP(camera.GetProjectionMatrix() * camera.GetViewMatrix() * object.GetTransform());
+	vsPS1.SetMVP(MVP);
+
+	vsWarble.SetMVP(MVP);
+	vsWarble.SetTime(time);
 
 	Renderer::RenderCommand c = {
-		meshes[currentMeshIndex],
-		textures[currentTextureIndex],
-		vertexShaders[currentVertexShaderIdx]
+		meshes.Current(),
+		textures.Current(),
+		vertexShaders.Current()
+		//meshes[currentMeshIndex],
+		//textures[currentTextureIndex],
+		//&vsWarble//vertexShaders[currentVertexShaderIdx]
 	};
 	renderer.SendCommand(c);
 
@@ -212,18 +217,19 @@ void Scene::DrawConfigGUI()
 	if (ImGui::Combo("Preset", &currentPreset, presets, std::size(presets)))
 	{
 		object.position = Vec3(0.0f, 0.0f, 3.0f);
-		object.rotation = Quat();
+		object.rotation = Quat(1.0f, 0.0f, 0.0f, 0.0f);
 		object.scale = Vec3(1.0f);
 		camera.transform.position = Vec3(0.0f, 0.0f, 0.0f);
-		camera.transform.rotation = Quat();
+		camera.transform.rotation = Quat(1.0f, 0.0f, 0.0f, 0.0f);
 
 		// Spinning Cube preset
 		if (currentPreset == 0)
 		{
 			angularVelocity = Vec3(0.2f, -1.0f, -1.5f);
-			currentMeshIndex = 1;
-			currentTextureIndex = 0;
-			currentVertexShaderIdx = 0;
+			
+			meshes.SetCurrent("Cube");
+			textures.SetCurrent("UV Map Test");
+			vertexShaders.SetCurrent("Default");
 
 			renderer.config.polygonMode = Renderer::PolygonMode::FILLED;
 			renderer.config.objectColor = Renderer::ObjectColor::TEXTURED;
@@ -237,9 +243,9 @@ void Scene::DrawConfigGUI()
 		else if (currentPreset == 1)
 		{
 			angularVelocity = Vec3(0.0f, -1.0f, 0.0f);
-			currentMeshIndex = 4;
-			currentTextureIndex = 1;
-			currentVertexShaderIdx = 0;
+			meshes.SetCurrent("Neeko");
+			textures.SetCurrent("Neeko");
+			vertexShaders.SetCurrent("Default");
 
 			renderer.config.polygonMode = Renderer::PolygonMode::FILLED;
 			renderer.config.objectColor = Renderer::ObjectColor::TEXTURED;
@@ -251,9 +257,9 @@ void Scene::DrawConfigGUI()
 		else if (currentPreset == 2)
 		{
 			angularVelocity = Vec3(0.0f, -1.0f, 0.0f);
-			currentMeshIndex = 5;
-			currentTextureIndex = 2;
-			currentVertexShaderIdx = 1;
+			meshes.SetCurrent("Megaman");
+			textures.SetCurrent("Megaman");
+			vertexShaders.SetCurrent("PS1");
 			vsPS1.SetRounding(50.0f);
 
 			renderer.config.polygonMode = Renderer::PolygonMode::FILLED;
@@ -266,8 +272,8 @@ void Scene::DrawConfigGUI()
 		else if (currentPreset == 3)
 		{
 			angularVelocity = Vec3(0.0f, 0.0f, 0.0f);
-			currentMeshIndex = 0;
-			currentVertexShaderIdx = 0;
+			meshes.SetCurrent("Triangle");
+			vertexShaders.SetCurrent("Default");
 
 			renderer.config.polygonMode = Renderer::PolygonMode::FILLED;
 			renderer.config.objectColor = Renderer::ObjectColor::COLORED_VERTS;
@@ -285,9 +291,10 @@ void Scene::DrawConfigGUI()
 	ImGui::SameLine(); ImGui::SetCursorPosX(205);
 	ImGui::Text("ms (avg %.01f)", (float)(avgFrameTime * 1000));
 
-	ImGui::Combo("Mesh", &currentMeshIndex, &meshNames[0], static_cast<int>(meshes.size()));
+	meshes.DisplayCombo();
+	//ImGui::Combo("Mesh", &currentMeshIndex, &meshNames[0], static_cast<int>(meshes.size()));
 
-	ImGui::Text("Vertices: %d, Triangles: %d", meshes[currentMeshIndex]->vertCount, 0);
+	ImGui::Text("Vertices: %d, Triangles: %d", meshes.Current()->vertCount, 0);
 	ImGui::Text("Rasterized Triangles: %d", renderer.metrics.rasterizedTriangles);
 	ImGui::Text("Clipped Triangles: %d", renderer.metrics.clippedTriangles);
 
@@ -299,7 +306,7 @@ void Scene::DrawConfigGUI()
 		const char* ocTypes[] = { "Flat", "Coloured Vertices", "Checkerboard", "Textured" };
 		ImGui::Combo("Object Color", (int*)&renderer.config.objectColor, ocTypes, std::size(ocTypes));
 		if (renderer.config.objectColor == Renderer::ObjectColor::TEXTURED)
-			ImGui::Combo("Texture", &currentTextureIndex, &textureNames[0], static_cast<int>(textures.size()));
+			textures.DisplayCombo(); //ImGui::Combo("Texture", &currentTextureIndex, &textureNames[0], static_cast<int>(textures.size()));
 	}
 
 	ImGui::Checkbox("Use Depth Buffer", &renderer.config.useDepthBuffer);
@@ -316,16 +323,22 @@ void Scene::DrawConfigGUI()
 		}
 	}
 
-	if (ImGui::CollapsingHeader("Vertex Shader"))
+	if (ImGui::CollapsingHeader("Vertex"))
 	{
-		ImGui::Combo("Current VS", &currentVertexShaderIdx, &vsNames[0], static_cast<int>(vertexShaders.size()));
+		vertexShaders.DisplayCombo();
+		//ImGui::Combo("Current VS", &currentVertexShaderIdx, &vsNames[0], static_cast<int>(vertexShaders.size()));
 		
-		if (currentVertexShaderIdx == 1)
+		if (vertexShaders.Current() == &vsPS1)
 		{
 			float r = vsPS1.GetRounding();
 			ImGui::InputFloat("Rounding", &r, 0.0f, 0.0f, "%.1f");
 			vsPS1.SetRounding(r);
 		}
+	}
+
+	if (ImGui::CollapsingHeader("Fragment"))
+	{
+
 	}
 
 	if (ImGui::CollapsingHeader("Camera"))
@@ -371,7 +384,7 @@ void Scene::DrawConfigGUI()
 
 	if (ImGui::CollapsingHeader("Mesh Coordinates"))
 	{
-		uint32_t count = meshes[currentMeshIndex]->v.size() / 3;
+		uint32_t count = meshes.Current()->v.size() / 3;
 
 		if (ImGui::ArrowButton("##left", ImGuiDir_Left)) 
 			renderer.metrics.curTriIdx = (renderer.metrics.curTriIdx == 0) ? count - 1 : renderer.metrics.curTriIdx - 1;;

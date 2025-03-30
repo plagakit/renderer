@@ -40,20 +40,49 @@ private:
 
 	DefaultVertexShader vsDefault;
 	PS1VertexShader vsPS1;
+	WarbleVertexShader vsWarble;
 
 	int currentPreset = 0;
 
-	int currentMeshIndex = 0;
-	static constexpr char* meshNames[] = { "Triangle", "Cube", "Suzanne", "Teapot", "Neeko", "Megaman" };
-	const std::vector<Mesh*> meshes = { &triangle, &cube, &suzanne, &teapot, &neeko, &megaman };
+	template<typename T>
+	struct ComboSelector {
+		const char* title;
+		std::vector<const char*> names;
+		std::vector<T*> items;
 
-	int currentTextureIndex = 0;
-	static constexpr char* textureNames[] = { "UV Map Test", "Neeko", "Megaman" };
-	const std::vector<Texture*> textures = { &testTexture, &neekoTexture, &megamanTexture };
+		int currentIndex = 0;
 
-	int currentVertexShaderIdx = 0;
-	static constexpr char* vsNames[] = { "Default", "PS1" };
-	const std::vector<VertexShader*> vertexShaders = { &vsDefault, &vsPS1 };
+		bool DisplayCombo() { return ImGui::Combo(title, &currentIndex, names.data(), static_cast<int>(items.size())); }
+		void Increment() { currentIndex = (currentIndex + 1) % static_cast<int>(items.size()); }
+		void Decrement() { currentIndex = (currentIndex - 1 + static_cast<int>(items.size())) % static_cast<int>(items.size()); }
+		T* Current() { return items[currentIndex]; }
+		void SetCurrent(const char* targetName) 
+		{
+			for (size_t i = 0; i < names.size(); i++)
+				if (std::strcmp(names[i], targetName) == 0)
+					currentIndex = static_cast<int>(i);
+		}
+	};
+
+	ComboSelector<Mesh> meshes = {
+		"Mesh",
+		{ "Triangle", "Cube", "Suzanne", "Teapot", "Neeko", "Megaman" },
+		{ &triangle, &cube, &suzanne, &teapot, &neeko, &megaman }
+	};
+
+	ComboSelector<Texture> textures = {
+		"Texture",
+		{ "UV Map Test", "Neeko", "Megaman" },
+		{ &testTexture, &neekoTexture, &megamanTexture }
+	};
+
+	ComboSelector<VertexShader> vertexShaders = {
+		"Vertex Shader",
+		{ "Default", "PS1", "Warble"},
+		{ &vsDefault, &vsPS1, &vsWarble}
+	};
+
+	// Window management	
 
 	ImFont* font;
 	void DrawConfigGUI();
